@@ -1,0 +1,30 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+  <model name='iris_downward_camera'>
+    <!-- <include>
+      <uri>model://iris</uri>
+    </include> -->
+    <include>
+      <uri>model://px4vision</uri>
+    </include>
+
+
+    <include>
+      <uri>model://monocular_camera</uri>
+      <pose>-0.08 0 0.0 0 1.5707963 0</pose>
+    </include>
+    <joint name="monocular_camera_joint" type="fixed">
+      <parent>px4vision::base_link</parent>
+      <child>monocular_camera::link</child>
+      <axis>
+        <limit>
+          <lower>0</lower>
+          <upper>0</upper>
+        </limit>
+        <xyz>0 0 0</xyz>
+      </axis>
+    </joint>
+
+  </model>
+</sdf>
+

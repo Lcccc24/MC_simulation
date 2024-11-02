@@ -1,0 +1,14 @@
+# rosparam load ~/Workspace/uav_ws/src/uav_utils/config/onboard_msg.yaml
+uav0_onboard:
+  uav_id: 0 
+  target_uav_id: 1
+  flight_command: 3 # 母机飞行指令：0-无指令 1-起飞 2-任务 3-对接 4-降落 5-允许返航 6-允许精准降落
+  flight_status: 0  # 子机飞行状态：10-起飞完成 20-任务完成 40-降落完成 40-返航完成 50-精准降落完成 
+  position:
+    x: 0.5
+    y: 1.2
+    z: 4.2
+  pub_onboard_msg: true
+
+#  rosbag record /position_cmd /tf /mavros/setpoint_raw/attitude /mavros/local_position/odom /onboard_uav_trajectory /mavros/imu/data /landing_target_pose
+# UAV disarm failed!

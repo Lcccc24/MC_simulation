@@ -1,0 +1,30 @@
+<launch>
+
+    <!-- 发布静态坐标系 base_link  head_camera-->
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="tf_pub" args="-0.08 0 0 0 0 0 1 /base_link /camera_link"/> -->
+
+    <node pkg="planner" type="onboard_uav_node" name="onboard_uav_node" output="screen" />
+        <param name="uav_id" type="int" value="1" />
+        <param name="target_uav_id" type="int" value="0" />
+        <param name="uav/origin_pos_offset_x" type="double" value="1.0" />
+        <param name="uav/origin_pos_offset_y" type="double" value="0.0" />
+        <param name="uav/origin_pos_offset_z" type="double" value="0.0" />
+        <param name="uav/takeoff_height" type="double" value="1.0" />
+        <param name="docking/return_pos_offset_x" type="double" value="0.0" />
+        <param name="docking/return_pos_offset_y" type="double" value="0.0" />
+        <param name="docking/return_pos_offset_z" type="double" value="2.0" />
+        <param name="docking/horizontal_distance_tolerance" type="double" value="0.5" />
+        <param name="docking/horizontal_approach_height" type="double" value="2.0" />
+        <param name="docking/final_landing_height" type="double" value="0.2" />
+        <param name="docking/landing_acceptable_error" type="double" value="0.1" />
+        <param name="docking/allowed_landing_time_s" type="double" value="300.0" />
+        <param name="docking/allowed_retry_hover_time_s" type="double" value="10.0" />
+        <param name="docking/retry_climb_height" type="double" value="2.0" />
+        <param name="docking/allowed_retry_num" type="int" value="10" />
+        <param name="msg_timeout/odom" type="double" value="0.5" />
+        <param name="msg_timeout/onboard" type="double" value="0.5" />
+        <param name="msg_timeout/landing_target" type="double" value="0.1" />
+
+
+    <node pkg="planner" type="traj_server_node" name="traj_server_node" output="screen" />
+</launch>

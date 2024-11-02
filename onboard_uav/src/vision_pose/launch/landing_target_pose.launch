@@ -1,0 +1,98 @@
+<launch>
+
+    <!-- 发布静态坐标系 机体坐标系  相机坐标系-->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_camera_tf_pub" args="-0.08 0 0 0.707 -0.707 0 0 /base_link /camera_link"/>
+
+    <arg name="camera_name" default="uav_camera" /> <!-- usb_cam -->
+
+    <node pkg="nodelet" type="nodelet" name="camera_nodelet_manager" args="manager" />
+
+    <!-- 图像校正 -->
+    <node  pkg="nodelet" type="nodelet" name="image_proc_nodelet" args="load image_proc/rectify camera_nodelet_manager">
+      <remap from="image_mono" to="$(arg camera_name)/image_raw"/>
+      <remap from="camera_info" to="$(arg camera_name)/camera_info"/>
+      <remap from="image_rect" to="$(arg camera_name)/image_rect" />
+    </node>
+
+    <!-- apriltag检测器 -->
+    <node pkg="nodelet" type="nodelet" name="apriltag_ros_nodelet" args="load apriltag_ros/ContinuousDetector camera_nodelet_manager">
+      <remap from="image_rect" to="$(arg camera_name)/image_rect" />
+      <remap from="camera_info" to="$(arg camera_name)/camera_info" />
+
+      <param name="publish_tag_detections_image" type="bool" value="false" />
+      <param name="queue_size" type="int" value="5" />
+
+      <rosparam command="load" file="$(find apriltag_ros)/config/settings.yaml"/>
+      <rosparam command="load" file="$(find apriltag_ros)/config/tags.yaml"/>
+    </node>
+
+    <!-- apriltag板位置控制 -->
+    <node pkg="uav_utils" type="apriltag_pose_ctrl" name="apriltag_pose_ctrl" output="screen" >
+        <param name="target_uav_state_topic" type="string" value="/uav0/mavros/state" />
+        <param name="target_uav_name" type="string" value="iris0" />
+        <param name="target_model_name" type="string" value="apriltag" />
+    </node>
+
+    <!-- 子机视角下，apriltag板的位置真直-->
+    <node pkg="uav_utils" type="gazebo_true" name="true_target_pose" output="screen" />
+
+    <node pkg="mavros" type="mavcmd" name="mavcmd_imu_data_raw" args="long 511 105 10000 0 0 0 0 0"/>
+
+    <!-- 控制子母机飞行 -->
+    <node pkg="offboard" type="offboard_node" name="offboard_node" output="screen" />
+    <node pkg="offboard" type="offboard_node_z" name="offboard_node_z" output="screen" />
+
+    <!-- 根据Jain等人的EKF改版的ESKF -->
+    <node pkg="vision_pose" type="landing_target_pose_node_jain" name="landing_target_pose_jain" output="screen" />
+        <param name="jain/eskf/eskf_hz" type="int" value="100" />
+        <param name="jain/eskf/use_imu0" type="bool" value="true" />
+        <param name="jain/eskf/gyro_var" type="double" value="0.0001" /> <!-- 0.00001 -->
+        <param name="jain/eskf/acce_var" type="double" value="0.001" /> <!-- 0.0001 -->
+        <param name="jain/eskf/bias_gyro_var" type="double" value="0.000005" />
+        <param name="jain/eskf/bias_acce_var" type="double" value="0.00005" />
+        <param name="jain/eskf/bias_gyro_x" type="double" value="0.0" />
+        <param name="jain/eskf/bias_gyro_y" type="double" value="0.0" />
+        <param name="jain/eskf/bias_gyro_z" type="double" value="0.0" />
+        <param name="jain/eskf/bias_acce_x" type="double" value="0.0" />
+        <param name="jain/eskf/bias_acce_y" type="double" value="0.0" />
+        <param name="jain/eskf/bias_acce_z" type="double" value="0.0" />
+        <param name="jain/eskf/update_bias_gyro" type="bool" value="true" />
+        <param name="jain/eskf/update_bias_acce" type="bool" value="true" />
+        <param name="jain/eskf/vision_xy_noise" type="double" value="0.02" /> 
+        <param name="jain/eskf/vision_z_noise" type="double" value="0.04" /> 
+        <param name="jain/eskf/vision_roll_pitch_noise" type="double" value="0.1" />
+        <param name="jain/eskf/vision_yaw_noise" type="double" value="0.1" />
+        <param name="jain/eskf/gravity" type="double" value="9.8" />
+        <param name="tag/topic_name" type="string" value="/tag_detections" />
+        <param name="tag/tag_frame_id" type="string" value="tag36h11" />
+        <param name="tag/tag_valid_distance" type="double" value="5.0" />
+        <param name="frame/camera_frame_id" type="string" value="camera_link" />
+
+    <!-- ESKF -->
+    <node pkg="vision_pose" type="landing_target_pose_node" name="landing_target_pose" output="screen" />
+        <param name="eskf/eskf_hz" type="int" value="100" />
+        <param name="eskf/use_imu0" type="bool" value="true" />
+        <param name="eskf/gyro_var" type="double" value="0.0001" /> 
+        <param name="eskf/acce_var" type="double" value="0.0015" /> 
+        <param name="eskf/bias_gyro_var" type="double" value="0.000005" />
+        <param name="eskf/bias_acce_var" type="double" value="0.00005" />
+        <param name="eskf/bias_acce_m_var" type="double" value="0.00005" />
+        <param name="eskf/bias_gyro_x" type="double" value="0.0" />
+        <param name="eskf/bias_gyro_y" type="double" value="0.0" />
+        <param name="eskf/bias_gyro_z" type="double" value="0.0" />
+        <param name="eskf/bias_acce_x" type="double" value="0.0" />
+        <param name="eskf/bias_acce_y" type="double" value="0.0" />
+        <param name="eskf/bias_acce_z" type="double" value="0.0" />
+        <param name="eskf/update_bias_gyro" type="bool" value="true" />
+        <param name="eskf/update_bias_acce" type="bool" value="true" />
+        <param name="eskf/vision_xy_noise" type="double" value="0.02" /> 
+        <param name="eskf/vision_z_noise" type="double" value="0.04" /> 
+        <param name="eskf/vision_roll_pitch_noise" type="double" value="0.1" />
+        <param name="eskf/vision_yaw_noise" type="double" value="0.1" />
+        <param name="eskf/gravity" type="double" value="9.8" />
+        <param name="tag/topic_name" type="string" value="/tag_detections" />
+        <param name="tag/tag_frame_id" type="string" value="tag36h11" />
+        <param name="tag/tag_valid_distance" type="double" value="5.0" />
+        <param name="frame/camera_frame_id" type="string" value="camera_link" />
+
+</launch>

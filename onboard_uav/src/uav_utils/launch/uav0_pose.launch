@@ -1,0 +1,13 @@
+<launch>
+
+    <!-- <node pkg="uav_utils" type="offboard_node" name="offboard_node" output="screen" /> -->
+
+    <node pkg="uav_utils" type="apriltag_pose_ctrl" name="apriltag_pose_ctrl" output="screen" >
+        <param name="target_uav_state_topic" value="/uav0/mavros/state"/>
+        <param name="target_uav_name" value="iris0"/>
+        <param name="target_model_name" value="apriltag"/>
+    </node>
+
+    <!-- <node pkg="uav_utils" type="uav0_onboard_msg" name="uav0_onboard_msg" output="screen" /> -->
+    
+</launch>

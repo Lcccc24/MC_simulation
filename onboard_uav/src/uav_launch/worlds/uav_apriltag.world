@@ -1,0 +1,126 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+  <world name="default">
+    <!-- A global light source -->
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <!-- A ground plane -->
+    <!-- <include>
+      <uri>model://ground_plane</uri>
+    </include>
+    <include>
+      <uri>model://asphalt_plane</uri>
+    </include> -->
+    <physics name='default_physics' default='0' type='ode'>
+      <gravity>0 0 -9.8066</gravity>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>10</iters>
+          <sor>1.3</sor>
+          <use_dynamic_moi_rescaling>0</use_dynamic_moi_rescaling>
+        </solver>
+        <constraints>
+          <cfm>0</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>100</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+      <magnetic_field>6.0e-6 2.3e-5 -4.2e-5</magnetic_field>
+    </physics>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+            <friction>
+              <ode>
+                <mu>100</mu>
+                <mu2>50</mu2>
+              </ode>
+            </friction>          
+        </collision>
+        <!-- <visual name="runway">
+          <pose>000 0 0.0 0 0 0</pose>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 10</size>
+            </plane>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Runway</name>
+            </script>
+          </material>
+        </visual> -->
+        <visual name="grass">
+          <pose>0 0 -0.005 0 0 0</pose>
+          <cast_shadows>false</cast_shadows>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grass</name>
+            </script>
+          </material>
+        </visual>
+
+      </link>
+    </model>
+
+    <!-- <model name="typhoon_h480">
+      <static>true</static>
+      <pose> 1 1 1 0 0 0 </pose>
+      <include>
+        <uri>model://typhoon_h480_apriltag</uri>
+        <pose> 0 0 0 0 0 0 </pose>
+      </include>
+    </model> -->
+
+    <model name="apriltag">
+      <static>true</static>
+      <pose> 0 1.0 0.1 0 0 0 </pose>
+      <include>
+        <uri>model://apriltag_48</uri>
+      </include>
+    </model>
+<!-- 
+    <model name="box1">
+      <static>true</static>
+      <pose> 0 0.0 0.2 0 0 0 </pose>
+      <include>
+        <uri>model://box1</uri>
+      </include>
+    </model> -->
+
+
+    <!-- <model name="iris_downward_camera">
+      <static>true</static>
+      <pose> 0.5 0.3 3.41 0 0 0 </pose>
+      <include>
+        <uri>model://iris_downward_camera</uri>
+        <pose> 0 0 0 0 0 0 </pose>
+      </include>
+    </model> -->
+
+  </world>
+</sdf>

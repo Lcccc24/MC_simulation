@@ -1,0 +1,73 @@
+<launch>
+
+    <!-- 发布静态坐标系 base_link  head_camera-->
+    <!-- <node pkg="tf" type="static_transform_publisher" name="tf_pub" args="-0.08 0 0 0.707 -0.707 0 0 /base_link /camera_link 30"/> -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_camera_tf_pub" args="-0.08 0 0 0.707 -0.707 0 0 /base_link /camera_link"/>
+    <!-- <node pkg="tf2_ros" type="static_transform_publisher" name="map_tf_pub" args="0 0 0 0 0 0 1 /map /world"/> -->
+
+    <!-- 真机 -->
+
+    <!-- <node name="usb_cam" pkg="usb_cam" type="usb_cam_node" output="screen" >
+        <rosparam command="load" file="$(find uav_launch)/config/usb_cam.yaml"/>
+        <param name="camera_info_url" type="string" value="file://$(find uav_launch)/config/usb_camera_calibration.yaml" />
+    </node> -->
+
+    <arg name="camera_name" default="uav_camera" /> <!-- usb_cam -->
+
+  <!-- <group ns="$(arg camera_name)" > -->
+    <!-- Load the nodelet manager -->
+    <node pkg="nodelet" type="nodelet" name="camera_nodelet_manager" args="manager" />
+
+    <!-- Load image_proc nodelet -->
+    <node  pkg="nodelet" type="nodelet" name="image_proc_nodelet" args="load image_proc/rectify camera_nodelet_manager">
+      <remap from="image_mono" to="$(arg camera_name)/image_raw"/>
+      <remap from="camera_info" to="$(arg camera_name)/camera_info"/>
+      <remap from="image_rect" to="$(arg camera_name)/image_rect" />
+    </node>
+
+    <!-- Load apriltag_ros nodelet -->
+    <!-- <node pkg="nodelet" type="nodelet" name="apriltag_ros_nodelet" args="load apriltag_ros/ContinuousDetector camera_nodelet_manager"> -->
+    <node pkg="apriltag_ros" type="apriltag_ros_continuous_node" name="apriltag_ros_continuous_node" output="screen" >
+      <remap from="image_rect" to="$(arg camera_name)/image_rect" />
+      <remap from="camera_info" to="$(arg camera_name)/camera_info" />
+
+      <param name="publish_tag_detections_image" type="bool" value="false" />
+      <param name="queue_size" type="int" value="5" />
+
+      <rosparam command="load" file="$(find apriltag_ros)/config/settings.yaml"/>
+      <rosparam command="load" file="$(find apriltag_ros)/config/tags.yaml"/>
+    </node>
+  <!-- </group> -->
+
+
+    <!-- 真机不需要该节点 -->
+    <!-- 控制apriltag板位置 -->
+    <node pkg="uav_utils" type="apriltag_pose_ctrl" name="apriltag_pose_ctrl" output="screen" >
+        <param name="target_uav_state_topic" type="string" value="/uav0/mavros/state" />
+        <param name="target_uav_name" type="string" value="iris0" />
+        <param name="target_model_name" type="string" value="apriltag" />
+    </node>
+
+    <!-- <include file="$(find apriltag_ros)/launch/continuous_detection.launch">
+        <arg name="camera_name" value="/uav_camera" />
+        <arg name="image_topic" value="image_raw" />
+    </include> -->
+
+    <!-- EKF -->
+    <node pkg="landing_pose" type="landing_pose" name="landing_pose" output="screen" />
+        <param name="ekf_param/ekf_hz" type="int" value="30" />
+        <param name="ekf_param/accel_noise" type="double" value="2.5" />
+        <param name="ekf_param/xy_pos_var" type="double" value="0.05" />
+        <param name="ekf_param/z_pos_var" type="double" value="0.1" />
+        <param name="ekf_param/vel_var" type="double" value="0.25" />
+        <param name="docking/tag_frame_id" type="string" value="tag36h11" />
+        <param name="docking/tag_offset_x" type="double" value="0.0" />
+        <param name="docking/tag_offset_y" type="double" value="0.0" /> <!-- 0.25 -->
+        <param name="docking/tag_offset_z" type="double" value="0.05" /> <!-- 考虑子机质心在降落平台上的位置 -->
+        <param name="docking/tag_offset_yaw" type="double" value="1.5708" />
+        <param name="docking/tag_valid_distance" type="double" value="5.0" />
+        <param name="msg_timeout/uav_vel" type="double" value="0.5" />
+        <param name="msg_timeout/tf" type="double" value="0.5" />
+
+    <node pkg="uav_utils" type="gazebo_true" name="true_target_pose" output="screen" />
+</launch>

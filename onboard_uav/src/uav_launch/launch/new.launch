@@ -1,0 +1,7 @@
+<launch>
+    <node pkg="uav_utils" type="uav0_onboard_msg" name="uav0_onboard_msg" output="screen" />
+        <param name="/uav0_onboard/use_param_ctrl" type="bool" value="true" />
+        <param name="/uav0_onboard/mission_pos_x" type="double" value="0.0" />
+        <param name="/uav0_onboard/mission_pos_y" type="double" value="0.0" />
+        <param name="/uav0_onboard/mission_pos_z" type="double" value="2.0" />
+</launch>

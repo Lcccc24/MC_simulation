@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<launch>
+
+    <!-- 设置px4_config.yaml，发布tf -->
+    <arg name="fcu_url" default="/dev/ttyUSB0:921600"/>
+    <arg name="respawn_mavros" default="false"/>
+
+    <!-- MAVROS -->
+    <include file="$(find mavros)/launch/px4.launch">
+        <arg name="gcs_url" value=""/>
+        <arg name="fcu_url" value="$(arg fcu_url)"/>
+        <arg name="respawn_mavros" value="$(arg respawn_mavros)"/>
+    </include>
+
+    <!-- 调整IMU发布频率为 100 Hz -->
+    <node pkg="mavros" type="mavcmd" name="mavcmd_imu_data_raw" args="long 511 105 10000 0 0 0 0 0"/>
+    <node pkg="mavros" type="mavcmd" name="mavcmd_imu_data" args="long 511 31 10000 0 0 0 0 0"/>
+</launch>

@@ -1,0 +1,27 @@
+# https://docs.ros.org/en/api/sensor_msgs/html/msg/CameraInfo.html
+image_width: 1920
+image_height: 1080
+camera_name: usb_camera
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [824.074748,   0.       , 946.179313,
+           0.      , 827.564372 , 617.369406,
+           0.      ,   0.       ,   1.     ]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [-0.309683, 0.092472, 0.0, 0.0, -0.012150]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1., 0., 0.,
+         0., 1., 0.,
+         0., 0., 1.]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [824.074748,   0.     , 946.179313 ,   0.     ,
+           0.     , 827.564372 , 617.369406,   0.     ,
+           0.     ,   0.     ,   1.     ,   0.     ]

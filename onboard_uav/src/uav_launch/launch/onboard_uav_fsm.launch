@@ -1,0 +1,82 @@
+<launch>
+
+
+    <!--include file="$(find nlink_parser)/launch/linktrack.launch" -->
+    <!--/include -->
+    
+        <node pkg="planner" type="fake_uwb_node" name="fake_uwb_node" />
+    
+    <!-- 发布静态坐标系 map  world-->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="map_world_tf_pub" args="0 0 0 0 0 0 1 /map /world"/>
+
+    <node pkg="planner" type="onboard_uav_node" name="onboard_uav_node" output="screen" />
+        <param name="uav_id" type="int" value="1" />
+        <param name="target_uav_id" type="int" value="0" />
+        <param name="uav/origin_pos_offset_x" type="double" value="1.0" />
+        <param name="uav/origin_pos_offset_y" type="double" value="0.0" />
+        <param name="uav/origin_pos_offset_z" type="double" value="0.0" />
+        <param name="uav/takeoff_height" type="double" value="1.0" />
+        <param name="docking/return_pos_offset_x" type="double" value="1.5" />
+        <param name="docking/return_pos_offset_y" type="double" value="2.0" />
+        <param name="docking/return_pos_offset_z" type="double" value="2.5" /> <!-- 不能为零 -->
+        <!-- <param name="docking/horizontal_distance_tolerance" type="double" value="0.5" />
+        <param name="docking/horizontal_approach_height" type="double" value="2.0" /> -->
+        <param name="docking/final_landing_height" type="double" value="0.5" />
+        <param name="docking/allowed_final_landing_time_s" type="double" value="30.0" />
+        <param name="docking/landing_acceptable_error" type="double" value="0.1" />
+        <param name="docking/landing_complete_height" type="double" value="0.15" />
+        <param name="docking/allowed_landing_time_s" type="double" value="300.0" />
+        <param name="docking/allowed_retry_hover_time_s" type="double" value="10.0" />
+        <param name="docking/retry_climb_height" type="double" value="1.0" />
+        <param name="docking/allowed_retry_num" type="int" value="10" />
+        <param name="msg_timeout/odom" type="double" value="0.5" />
+        <param name="msg_timeout/onboard" type="double" value="0.5" />
+        <param name="msg_timeout/landing_target" type="double" value="0.5" />
+
+        <!-- TrajOpt -->
+        <param name="traj_opt/is_landing" value="false"/>
+        <param name="traj_opt/K" value="16"/>
+        <param name="traj_opt/vmax" value="2.0"/>
+        <param name="traj_opt/amax" value="2.0"/>
+        <param name="traj_opt/thrust_max" value="17.0"/>
+        <param name="traj_opt/thrust_min" value="5.0"/>
+        <param name="traj_opt/omega_max" value="2.0"/>
+        <param name="traj_opt/omega_yaw_max" value="0.5"/>
+        <param name="traj_opt/v_plus" value="0.0"/> <!-- 未使用 -->
+        <param name="traj_opt/robot_l" value="0.00"/>
+        <param name="traj_opt/robot_r" value="0.0013"/> <!-- 0.13 -->
+        <param name="traj_opt/platform_r" value="0.01"/> <!-- 1.0 -->
+        <param name="traj_opt/rhoT" value="100000.0"/>
+        <param name="traj_opt/rhoVt" value="100000.0"/>
+        <param name="traj_opt/rhoP" value="0.0"/>
+        <param name="traj_opt/rhoD" value="1000.0"/>
+        <param name="traj_opt/rhoV" value="1000.0"/>
+        <param name="traj_opt/rhoA" value="1000.0"/>
+        <param name="traj_opt/rhoThrust" value="10000.0"/>
+        <param name="traj_opt/rhoOmega" value="100000.0"/>
+        <param name="traj_opt/rhoPerchingCollision" value="0.0"/>
+        <param name="traj_opt/pause_debug" value="false"/>
+
+
+
+    <node pkg="planner" type="traj_server_node" name="traj_server_node" output="screen" />
+
+    <!-- 替母机发布指令 -->
+    <!-- rosparam set /uav0_onboard/flight_command 1 -->
+    <node pkg="uav_utils" type="uav0_onboard_msg" name="uav0_onboard_msg" output="screen" />
+        <param name="/uav0_onboard/use_param_ctrl" type="bool" value="false" />
+        <param name="/uav0_onboard/mission_pos_x" type="double" value="1.5" />
+        <param name="/uav0_onboard/mission_pos_y" type="double" value="1.5" />
+        <param name="/uav0_onboard/mission_pos_z" type="double" value="2.0" />
+
+    <!-- 可视化无人机 -->
+    <node pkg="uav_utils" type="uav_pose_vis" name="uav_pose_vis" output="screen" >
+        <remap from="/uav0/mavros/local_position/pose" to="/uav0/mavros/local_position/pose" />
+        <remap from="/uav1/mavros/local_position/pose" to="/mavros/local_position/pose" />
+        <remap from="/uav0/pose/visualization" to="/uav0/pose/visualization" />
+        <remap from="/uav1/pose/visualization" to="/uav1/pose/visualization" />
+    </node>
+    <!-- RVIZ -->
+    <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find uav_launch)/config/uav_vis.rviz" output="screen" /> -->
+
+</launch>

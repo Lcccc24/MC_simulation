@@ -1,0 +1,36 @@
+<launch>
+
+    <!-- <arg name="ekf_param/ekf_hz" default="30" />
+    <arg name="ekf_param/accel_noise" default="2.5" />
+    <arg name="ekf_param/xy_pos_var" default="0.1" />
+    <arg name="ekf_param/z_pos_var" default="0.2" />
+    <arg name="ekf_param/vel_var" default="0.25" />
+
+    <arg name="docking/big_tag_frame_id" default="tag36h11" />
+    <arg name="docking/big_tag_offset_x" default="0.0" />
+    <arg name="docking/big_tag_offset_y" default="0.25" />
+    <arg name="docking/big_tag_offset_z" default="0.0" />
+    <arg name="docking/big_tag_offset_yaw" default="1.5708" />
+    <arg name="docking/big_tag_valid_distance" default="5.0" />
+
+    <arg name="msg_timeout/uav_vel" default="0.5" />
+    <arg name="msg_timeout/tf" default="0.5" /> -->
+
+
+    <node pkg="landing_pose" type="landing_pose" name="landing_pose" output="screen" />
+        <param name="ekf_param/ekf_hz" type="int" value="30" />
+        <param name="ekf_param/accel_noise" type="double" value="2.5" />
+        <param name="ekf_param/xy_pos_var" type="double" value="0.1" />
+        <param name="ekf_param/z_pos_var" type="double" value="0.2" />
+        <param name="ekf_param/vel_var" type="double" value="0.25" />
+        <param name="docking/big_tag_frame_id" type="string" value="tag36h11" />
+        <param name="docking/big_tag_offset_x" type="double" value="0.0" />
+        <param name="docking/big_tag_offset_y" type="double" value="0.25" />
+        <param name="docking/big_tag_offset_z" type="double" value="0.0" />
+        <param name="docking/big_tag_offset_yaw" type="double" value="1.5708" />
+        <param name="docking/big_tag_valid_distance" type="double" value="5.0" />
+        <param name="msg_timeout/uav_vel" type="double" value="0.5" />
+        <param name="msg_timeout/tf" type="double" value="0.5" />
+
+
+</launch>
