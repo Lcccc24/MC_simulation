@@ -7,6 +7,7 @@
 #include <ros/ros.h>
 #include <std_msgs/Empty.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/Bool.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -21,6 +22,8 @@
 #include "quadrotor_msgs/Onboard.h"
 #include "quadrotor_msgs/TakeoffLand.h"
 #include "quadrotor_msgs/PolyTraj.h"
+#include "quadrotor_msgs/FsmState.h"
+#include "quadrotor_msgs/GuidanceState.h"
 #include "traj_opt/traj_opt.h"
 #include "vis_utils/vis_utils.hpp"
 #include <nlink_parser/LinktrackNodeframe2.h>
@@ -45,6 +48,7 @@ private:
         TAKEOFF,  // 起飞，指定位置悬停等待母机信号
         // WAIT_SIGNAL,        // 悬停等待母机信号
         MISSION,   // 执行任务
+        REMOTE_GUIDE, // 远程引导，跟随母机飞行轨迹
         DOCKING,   // 空中对接
         LAND,      // 就地降落
         FAIL_SAFE, // 故障保护，悬停
@@ -64,8 +68,8 @@ private:
     enum class LandingStates
     {
         INIT = 0,
-        // HORIZONTAL_APPROACH,  // 水平接近，对齐降落目标
-        DESCEND_ABOVE_TARGET, // 在目标上方下降
+        DESCEND_ABOVE_TARGET, // 在目标上方下降 一段接近
+        RE_CURRATE,           // 针对下降过程中xy偏差问题 二段纠正
         FINAL_LANDING         // 最终降落，标签不可见，降落并关闭电机
     };
     // 重试状态机
@@ -136,13 +140,14 @@ private:
     struct docking_param
     {
         double return_pos_offset[3];          // 返航位置偏置
-        double horizontal_distance_tolerance; // 水平距离容差
-        double horizontal_approach_height;    // 水平接近高度
-        double final_landing_height;          // 最终下降高度
-        double allowed_final_landing_time_s;  // 允许精准降落时间
-        double landing_acceptable_error;      // 允许降落误差
-        double landing_complete_height;       // 降落完成高度
+        double descend_hor_bias;              // descend水平距离容差
+        double descend_ver_bias;              // descend垂直接近高度
+        double rec_hor_bias;                  // rec水平距离容差
+        double rec_ver_bias;                  // rec垂直接近高度
+        double final_hor_bias;                // final水平距离容差
+        double final_ver_bias;                // final垂直接近高度
         double allowed_landing_time_s;        // 允许精准降落时间
+        double allowed_final_landing_time_s;  // 允许精准降落时间
         double allowed_retry_hover_time_s;    // 允许重试悬停时间
         double retry_climb_height;            // 重试爬升高度
         int allowed_retry_num;                // 允许重试次数
@@ -162,13 +167,17 @@ private:
     ros::NodeHandle nh_;
     ros::Subscriber uav_state_sub_, uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_pose_sub_, uwb_distance_sub_;
     // TODO  在socket通信中，需保证最少发送三次，才能保证消息被接收到
-    ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_;
+    ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_;
+    ros::Publisher remote_ctrl_pub_, fsm_state_pub_;
     ros::ServiceClient arm_disarm_client_;
 
     //lc add
     ros::Publisher px4_ctl_choose_,position_ctl_pub_;
     std_msgs::Int32 px4_choose_msg;
     mavros_msgs::PositionTarget P_target;; 
+
+    quadrotor_msgs::FsmState fsm_state_;
+    quadrotor_msgs::GuidanceState guidance_state_;
 
     //void Uwb_distance_callback(const nlink_parser::LinktrackNodeframe2 &msg);
     void Uwb_distance_callback(const std_msgs::Float64 msg); 
@@ -186,6 +195,9 @@ private:
     bool LandingTargetPoseIsReceived(const ros::Time &now_time);
     bool IsOnboardCommand(const int &flight_command);
     bool IsOnboardStatus(const int &flight_status);
+    void Pub_px4_cmd(float target_x, float target_y, float target_z);
+    void Pub_FSM_State();
+    void Pub_Guidance_State();
 
     mavros_msgs::State uav_state_;              // 无人机状态
     geometry_msgs::PoseStamped uav_local_pose_; // 无人机本地位置
@@ -215,7 +227,7 @@ private:
     ros::Timer fsm_timer_; // 定时器
     void UpdataFsm(const ros::TimerEvent &event);
     // 用 fsm_hz_ 控制状态机更新频率
-    int fsm_hz_;        // 状态机更新频率
+    int fsm_hz_;        // 状态机更新LandingPose频率
     int replan_hz_;     // 重新规划频率
     bool is_replan_;    // 是否重新规划
     bool is_first_run_; // 是否第一次运行该状态
@@ -232,8 +244,8 @@ private:
     // 创建一个包含四个三维向量的数组
     std::array<Eigen::Vector3d, 4> p_set = {
         Eigen::Vector3d(0.0, 0.0, 0.0),
-        Eigen::Vector3d(1.0, 1.0, 0.0),
-        Eigen::Vector3d(0.0, 1.0, 1.0), 
+        Eigen::Vector3d(0.0, -1.0, 1.0),  
+        Eigen::Vector3d(1.0, -1.0, 0.0),
         Eigen::Vector3d(1.0, 0.0, 1.0)
  
     };
@@ -248,18 +260,18 @@ private:
     
 
     //对接点相对母机的位置
-    Eigen::Vector3d dock_r2m = {0,0,1.5};
+    Eigen::Vector3d dock_r2m = {0.2,0,1.5};
     //几何法子机相对于对接点的估计位置
     Eigen::Vector3d geo_est_c2d = Eigen::Vector3d::Zero();
     Eigen::Vector3d ite_c2d_q = Eigen::Vector3d::Zero();
     Eigen::Vector3d ite_est_p = Eigen::Vector3d::Zero();
     int ite_k = 0;
     //几何法权重
-    float geo_p_weight = 0.25;
+    float geo_p_weight = 0.8;
     //uwb测量四点距离
     double pre_uwb_d[4] = {0,0,0,0};
-    float d_stopite = 0.95;
-    float d_change = 2;
+    float d_stopite = 0.25;
+    float d_change = 2.5;
 
     //远程引导标志位
     int rg_flag = 0;

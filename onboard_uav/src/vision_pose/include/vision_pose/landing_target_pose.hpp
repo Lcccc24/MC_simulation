@@ -122,4 +122,10 @@ private:
     ESKFD eskf_;
     ros::Timer eskf_timer_;
     void EskfTimerCallback(const ros::TimerEvent &event);
+
+        //lc add: 视觉监测相关变量
+    double last_vision_time_ = 0.0;     // 最后有效视觉时间戳
+    double vision_timeout_ = 1.0;       // 视觉超时阈值(秒)
+    bool vision_valid_ = false;         // 视觉数据有效性标志
+    bool eskf_enabled_ = false;        // ESKF使能标志
 };

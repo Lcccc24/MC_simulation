@@ -180,7 +180,7 @@ int main(int argc, char **argv)
     ros::Subscriber heartbeat_sub = nh.subscribe("/heartbeat", 10, heartbeatCallback);
 
     pos_cmd_pub_ = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
-    px4_pos_cmd_pub_ = nh.advertise<mavros_msgs::PositionTarget>("/mavros/setpoint_raw/local", 50);
+    px4_pos_cmd_pub_ = nh.advertise<mavros_msgs::PositionTarget>("/Sub_UAV/mavros/setpoint_raw/local", 50);
 
     ros::Timer cmd_timer = nh.createTimer(ros::Duration(0.1), cmdCallback);
 

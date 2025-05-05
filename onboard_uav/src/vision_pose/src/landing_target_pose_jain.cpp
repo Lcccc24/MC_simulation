@@ -4,9 +4,9 @@ LandingTargetPose::LandingTargetPose(ros::NodeHandle &nh) : nh_(nh) //, tf_liste
 {
     getParam();
 
-    uav_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data_raw", 1, &LandingTargetPose::ImuCallback, this);
-    uav0_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/uav0/mavros/imu/data", 1, &LandingTargetPose::Imu0Callback, this);
-    uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 1, &LandingTargetPose::LocalPosCallback, this);
+    uav_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/Sub_UAV/mavros/imu/data_raw", 1, &LandingTargetPose::ImuCallback, this);
+    uav0_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/AVC/mavros/imu/data", 1, &LandingTargetPose::Imu0Callback, this);
+    uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/Sub_UAV/mavros/local_position/pose", 1, &LandingTargetPose::LocalPosCallback, this);
     tag_detection_sub_ = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(tag_param_.topic_name, 1, &LandingTargetPose::TagDetectionCallback, this);
     // gazebo_true_sub_ = nh_.subscribe<gazebo_msgs::ModelStates>("/gazebo/model_states", 1, &LandingTargetPose::GazeboTrueCallback, this);
     // landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_raw", 1);

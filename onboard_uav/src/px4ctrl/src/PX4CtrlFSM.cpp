@@ -156,6 +156,8 @@ void PX4CtrlFSM::process()
 			ROS_WARN("[px4ctrl] AUTO_HOVER(L2) --> MANUAL_CTRL(L1)");
 		}
 		else if (rc_data.is_command_mode && cmd_is_received(now_time))
+		//lc change
+		//else if (rc_data.is_command_mode )
 		{
 			if (state_data.current_state.mode == "OFFBOARD")
 			{
@@ -200,6 +202,8 @@ void PX4CtrlFSM::process()
 			ROS_WARN("[px4ctrl] From CMD_CTRL(L3) to MANUAL_CTRL(L1)!");
 		}
 		else if (!rc_data.is_command_mode || !cmd_is_received(now_time))
+		//lc change
+		//else if (!rc_data.is_command_mode)
 		{
 			state = AUTO_HOVER;
 			set_hov_with_odom();

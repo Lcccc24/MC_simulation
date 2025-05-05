@@ -31,7 +31,7 @@
       <remap from="image_rect" to="$(arg camera_name)/image_rect" />
       <remap from="camera_info" to="$(arg camera_name)/camera_info" />
 
-      <param name="publish_tag_detections_image" type="bool" value="false" />
+      <param name="publish_tag_detections_image" type="bool" value="true" />
       <param name="queue_size" type="int" value="5" />
 
       <rosparam command="load" file="$(find apriltag_ros)/config/settings.yaml"/>
@@ -43,7 +43,7 @@
     <!-- 真机不需要该节点 -->
     <!-- 控制apriltag板位置 -->
     <node pkg="uav_utils" type="apriltag_pose_ctrl" name="apriltag_pose_ctrl" output="screen" >
-        <param name="target_uav_state_topic" type="string" value="/uav0/mavros/state" />
+        <param name="target_uav_state_topic" type="string" value="/AVC/mavros/state" />
         <param name="target_uav_name" type="string" value="iris0" />
         <param name="target_model_name" type="string" value="apriltag" />
     </node>
@@ -70,4 +70,8 @@
         <param name="msg_timeout/tf" type="double" value="0.5" />
 
     <node pkg="uav_utils" type="gazebo_true" name="true_target_pose" output="screen" />
+    
+    <node pkg="mother_control" type="mother_hover" name="mother_hover" output="screen" />
+    
+ 
 </launch>

@@ -1,6 +1,7 @@
 #include <ros/ros.h>
 #include <gazebo_msgs/ModelStates.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/Odometry.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
@@ -9,61 +10,88 @@ class GazeboModelStates
 public:
     GazeboModelStates()
     {
-        pub = nh.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_true", 10);
-        sub1 = nh.subscribe("/gazebo/model_states", 10, &GazeboModelStates::callback1, this);
-        sub2 = nh.subscribe("/mavros/local_position/pose", 10, &GazeboModelStates::callback2, this);
+        relative_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/relative_pose/gazebo_true", 10);
+        
+        Apritag_odom_pub = nh.advertise<nav_msgs::Odometry>("/Apritag_odom/gazebo_true", 10);
+        AVC_odom_pub = nh.advertise<nav_msgs::Odometry>("/AVC_odom/gazebo_true", 10);
+        Sub_UAV_odom_pub = nh.advertise<nav_msgs::Odometry>("Sub_UAV_odom/gazebo_true", 10);
+
+        gazebo_true_sub = nh.subscribe("/gazebo/model_states", 10, &GazeboModelStates::StatesCallback, this);
     }
 
-    void callback1(const gazebo_msgs::ModelStates::ConstPtr &msg)
+    void StatesCallback(const gazebo_msgs::ModelStates::ConstPtr &msg)
     {
+
+        //ROS_INFO("true");
+
+        //iris0 : AVC
+        //iris1 : Sub-UAV
         for (size_t i = 0; i < msg->name.size(); ++i)
         {
             if (msg->name[i] == "apriltag")
             {
-                apriltag_pose = msg->pose[i];
+                Apriltag_pose = msg->pose[i];
+                Apriltag_twist = msg->twist[i];
+            }
+            else if (msg->name[i] == "iris0")
+            {
+                AVC_pose = msg->pose[i];
+                AVC_twist = msg->twist[i];
             }
             else if (msg->name[i] == "iris1")
             {
-                iris_pose = msg->pose[i];
+                Sub_UAV_pose = msg->pose[i];
+                Sub_UAV_twist = msg->twist[i];
             }
         }
 
-        // 计算apriltag相对于iris的位置和姿态
-        relative_pose.position.x = apriltag_pose.position.x - iris_pose.position.x;
-        relative_pose.position.y = apriltag_pose.position.y - iris_pose.position.y;
-        relative_pose.position.z = apriltag_pose.position.z - iris_pose.position.z;
+        nav_msgs::Odometry odom_msg;
+        odom_msg.header.stamp = ros::Time::now();
+        odom_msg.pose.pose = Apriltag_pose;
+        //to world frame 
+        odom_msg.pose.pose.position.x -= 1.0f;
+        odom_msg.twist.twist = Apriltag_twist;
+        Apritag_odom_pub.publish(odom_msg);
+
+        odom_msg.header.stamp = ros::Time::now();
+        odom_msg.pose.pose = AVC_pose;
+        odom_msg.twist.twist = AVC_twist;
+        AVC_odom_pub.publish(odom_msg);
+
+        odom_msg.header.stamp = ros::Time::now();
+        odom_msg.pose.pose = Sub_UAV_pose;
+        odom_msg.twist.twist = Sub_UAV_twist;
+        Sub_UAV_odom_pub.publish(odom_msg);
+
+        // 计算apriltag相对于Sub_UAV的位置和姿态
+        relative_pose.position.x = Apriltag_pose.position.x - Sub_UAV_pose.position.x;
+        relative_pose.position.y = Apriltag_pose.position.y - Sub_UAV_pose.position.y;
+        relative_pose.position.z = Apriltag_pose.position.z - Sub_UAV_pose.position.z;
 
         tf2::Quaternion q1, q2, q_relative;
-        tf2::fromMsg(apriltag_pose.orientation, q1);
-        tf2::fromMsg(iris_pose.orientation, q2);
+        tf2::fromMsg(Apriltag_pose.orientation, q1);
+        tf2::fromMsg(Sub_UAV_pose.orientation, q2);
         q_relative = q2.inverse() * q1;
         q_relative.normalize();
         relative_pose.orientation = tf2::toMsg(q_relative);
+
+        geometry_msgs::PoseStamped relative_pose_msg;
+        relative_pose_msg.header.stamp = ros::Time::now(); 
+        relative_pose_msg.pose = relative_pose;
+        relative_pose_pub.publish(relative_pose_msg);
     }
 
-    void callback2(const geometry_msgs::PoseStamped::ConstPtr &msg)
-    {
-        geometry_msgs::PoseStamped pose;
-        pose.header.stamp = ros::Time::now();
-        pose.header.frame_id = "map";
-        pose.pose.position.x = msg->pose.position.x + relative_pose.position.x;//+ 0.25;
-        pose.pose.position.y = msg->pose.position.y + relative_pose.position.y;
-        pose.pose.position.z = msg->pose.position.z + relative_pose.position.z;// + 0.05;
 
-        tf2::Quaternion q1, q2, q_final;
-        tf2::fromMsg(msg->pose.orientation, q1);
-        tf2::fromMsg(relative_pose.orientation, q2);
-        q_final = q1 * q2;
-        pose.pose.orientation = tf2::toMsg(q_final);
-
-        pub.publish(pose);
-    }
 
 private:
     ros::NodeHandle nh;
-    ros::Publisher pub;
-    ros::Subscriber sub1, sub2;
-    geometry_msgs::Pose apriltag_pose, iris_pose, relative_pose;
+    ros::Publisher relative_pose_pub, Apritag_odom_pub, AVC_odom_pub, Sub_UAV_odom_pub;
+
+
+    ros::Subscriber gazebo_true_sub;
+    geometry_msgs::Pose Apriltag_pose, AVC_pose, Sub_UAV_pose, relative_pose;
+    geometry_msgs::Twist Apriltag_twist, AVC_twist, Sub_UAV_twist;
+
 };
 
 int main(int argc, char **argv)

@@ -129,6 +129,16 @@
     "typeinfo": "cpp",
     "valarray": "cpp",
     "variant": "cpp",
-    "*.ipp": "cpp"
-  }
+    "*.ipp": "cpp",
+    "matrixfunctions": "cpp",
+    "*.txx": "cpp"
+  },
+  "python.autoComplete.extraPaths": [
+    "/home/lc/mc_simu_ws/devel/lib/python3/dist-packages",
+    "/opt/ros/noetic/lib/python3/dist-packages"
+  ],
+  "python.analysis.extraPaths": [
+    "/home/lc/mc_simu_ws/devel/lib/python3/dist-packages",
+    "/opt/ros/noetic/lib/python3/dist-packages"
+  ]
 }

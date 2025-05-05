@@ -59,7 +59,7 @@ int main(int argc, char **argv)
   uav1_mesh_resource = "package://odom_visualization/meshes/f250.mesh";
 
   ros::Subscriber uav0_pose = nh.subscribe("/uav0/mavros/local_position/local", 100, uav0_pose_callback);
-  ros::Subscriber uav1_pose = nh.subscribe("/mavros/local_position/local", 100, uav1_pose_callback);
+  ros::Subscriber uav1_pose = nh.subscribe("/uav1/mavros/local_position/local", 100, uav1_pose_callback);
 
   uav0_pose_vis_pub_ = nh.advertise<visualization_msgs::Marker>("/uav0/pose/visualization", 100, true);
   uav1_pose_vis_pub_ = nh.advertise<visualization_msgs::Marker>("/uav1/pose/visualization", 100, true);

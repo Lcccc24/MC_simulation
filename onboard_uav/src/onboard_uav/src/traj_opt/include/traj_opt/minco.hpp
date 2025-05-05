@@ -499,9 +499,13 @@ class MINCO_S4_Uniform {
   ~MINCO_S4_Uniform() { A.destroy(); }
 
   inline void reset(const int &pieceNum) {
+    //N为控制点个数
     N = pieceNum;
+    //A初始化为带状矩阵结构，矩阵（方阵）维度为8*N，带宽为8
     A.create(8 * N, 8, 8);
+    //列数为3，行数为8*N，8指的是多项式维度，七次多项式八个参数
     b.resize(8 * N, 3);
+    //C矩阵储存计算后的返回值 
     c.resize(8 * N, 3);
     adjScaledGrad.resize(8 * N, 3);
 
@@ -509,28 +513,38 @@ class MINCO_S4_Uniform {
     gdP.resize(3, N - 1);
     gdTail.resize(3, 4);
 
+    //t(0)=1 tsquare =1 不对
+    //t(0) = 1.0 应该表示常数项 乘1仍为原数值
+    //T=1方便先计算出A矩阵参数 t参数有时会放在A矩阵中，此处放到了B矩阵中
+    //为什么放在b中，可以这样处理吗？？？？
     t(0) = 1.0;
 
+    //起始点pvaj，由于起始点t=0，即其他含t项此时全为0
     A(0, 0) = 1.0;
     A(1, 1) = 1.0;
     A(2, 2) = 2.0;
     A(3, 3) = 6.0;
     for (int i = 0; i < N - 1; i++) {
+
+      //中间点四次导连续约束，即snap
       A(8 * i + 4, 8 * i + 4) = 24.0;
       A(8 * i + 4, 8 * i + 5) = 120.0;
       A(8 * i + 4, 8 * i + 6) = 360.0;
       A(8 * i + 4, 8 * i + 7) = 840.0;
       A(8 * i + 4, 8 * i + 12) = -24.0;
 
+      //五次导连续约束
       A(8 * i + 5, 8 * i + 5) = 120.0;
       A(8 * i + 5, 8 * i + 6) = 720.0;
       A(8 * i + 5, 8 * i + 7) = 2520.0;
       A(8 * i + 5, 8 * i + 13) = -120.0;
 
+      //六次导连续约束
       A(8 * i + 6, 8 * i + 6) = 720.0;
       A(8 * i + 6, 8 * i + 7) = 5040.0;
       A(8 * i + 6, 8 * i + 14) = -720.0;
 
+      //中间点位置约束，相乘后等于B矩阵中的位置
       A(8 * i + 7, 8 * i) = 1.0;
       A(8 * i + 7, 8 * i + 1) = 1.0;
       A(8 * i + 7, 8 * i + 2) = 1.0;
@@ -540,6 +554,8 @@ class MINCO_S4_Uniform {
       A(8 * i + 7, 8 * i + 6) = 1.0;
       A(8 * i + 7, 8 * i + 7) = 1.0;
 
+      //中间点位置连续性约束，前一段时间末的p等于后一段时间初的p
+      //后一段时间初t从0开始，因此只有第一项有值，其余为零
       A(8 * i + 8, 8 * i) = 1.0;
       A(8 * i + 8, 8 * i + 1) = 1.0;
       A(8 * i + 8, 8 * i + 2) = 1.0;
@@ -550,6 +566,8 @@ class MINCO_S4_Uniform {
       A(8 * i + 8, 8 * i + 7) = 1.0;
       A(8 * i + 8, 8 * i + 8) = -1.0;
 
+      //中间点速度连续性约束，前一段时间末的v等于后一段时间初的v
+      //后一段时间初t从0开始，又求导后第一项为零，因此只有第二项有值，其余为零
       A(8 * i + 9, 8 * i + 1) = 1.0;
       A(8 * i + 9, 8 * i + 2) = 2.0;
       A(8 * i + 9, 8 * i + 3) = 3.0;
@@ -559,6 +577,7 @@ class MINCO_S4_Uniform {
       A(8 * i + 9, 8 * i + 7) = 7.0;
       A(8 * i + 9, 8 * i + 9) = -1.0;
 
+      //中间点加速度连续性约束，前一段时间末的a等于后一段时间初的a
       A(8 * i + 10, 8 * i + 2) = 2.0;
       A(8 * i + 10, 8 * i + 3) = 6.0;
       A(8 * i + 10, 8 * i + 4) = 12.0;
@@ -567,6 +586,7 @@ class MINCO_S4_Uniform {
       A(8 * i + 10, 8 * i + 7) = 42.0;
       A(8 * i + 10, 8 * i + 10) = -2.0;
 
+      //中间点加加速度连续性约束，前一段时间末的j等于后一段时间初的j
       A(8 * i + 11, 8 * i + 3) = 6.0;
       A(8 * i + 11, 8 * i + 4) = 24.0;
       A(8 * i + 11, 8 * i + 5) = 60.0;
@@ -574,6 +594,8 @@ class MINCO_S4_Uniform {
       A(8 * i + 11, 8 * i + 7) = 210.0;
       A(8 * i + 11, 8 * i + 11) = -6.0;
     }
+
+    //终点pavj约束
     A(8 * N - 4, 8 * N - 8) = 1.0;
     A(8 * N - 4, 8 * N - 7) = 1.0;
     A(8 * N - 4, 8 * N - 6) = 1.0;
@@ -603,7 +625,8 @@ class MINCO_S4_Uniform {
     A(8 * N - 1, 8 * N - 3) = 60.0;
     A(8 * N - 1, 8 * N - 2) = 120.0;
     A(8 * N - 1, 8 * N - 1) = 210.0;
-
+    
+    //A矩阵LU分解
     A.factorizeLU();
 
     return;
@@ -616,6 +639,7 @@ class MINCO_S4_Uniform {
     headPVAJ = hPVAJ;
     tailPVAJ = tPVAJ;
 
+    //时间的次幂，用于后续计算轨迹
     t(1) = dT;
     t(2) = t(1) * t(1);
     t(3) = t(2) * t(1);
@@ -626,13 +650,17 @@ class MINCO_S4_Uniform {
     tInv = t.cwiseInverse();
 
     b.setZero();
+    //起始点位置约束
     b.row(0) = headPVAJ.col(0).transpose();
     b.row(1) = headPVAJ.col(1).transpose() * t(1);
     b.row(2) = headPVAJ.col(2).transpose() * t(2);
     b.row(3) = headPVAJ.col(3).transpose() * t(3);
     for (int i = 0; i < N - 1; i++) {
+      //中间点位置约束
+      //后续梯度传导时会使用到这一行 
       b.row(8 * i + 7) = inPs.col(i).transpose();
     }
+    //终点位置约束
     b.row(8 * N - 4) = tailPVAJ.col(0).transpose();
     b.row(8 * N - 3) = tailPVAJ.col(1).transpose() * t(1);
     b.row(8 * N - 2) = tailPVAJ.col(2).transpose() * t(2);
@@ -640,6 +668,7 @@ class MINCO_S4_Uniform {
 
     A.solve(b);
 
+    //将系数储存到C中
     for (int i = 0; i < N; i++) {
       c.block<8, 3>(8 * i, 0) =
           b.block<8, 3>(8 * i, 0).array().colwise() * tInv.array();
@@ -650,6 +679,7 @@ class MINCO_S4_Uniform {
 
   inline void calGrads_CT() {
     // addGradJbyC
+    //J对c的偏导jdC == 2*Q*c
     for (int i = 0; i < N; i++) {
       gdC.row(8 * i + 7) = 10080.0 * c.row(8 * i + 4) * t(4) +
                            40320.0 * c.row(8 * i + 5) * t(5) +
@@ -672,6 +702,7 @@ class MINCO_S4_Uniform {
     // addGradJbyT
     gdT = 0.0;
     for (int i = 0; i < N; i++) {
+    // J对T的偏导jdT == Tr(cT*R*c) R矩阵为beta转置*beta   
       gdT += 576.0 * c.row(8 * i + 4).squaredNorm() +
              5760.0 * c.row(8 * i + 4).dot(c.row(8 * i + 5)) * t(1) +
              14400.0 * c.row(8 * i + 5).squaredNorm() * t(2) +
@@ -687,17 +718,24 @@ class MINCO_S4_Uniform {
   }
 
   inline void calGrads_PT() {
+
+    //W对q的偏导 由K对c的偏导 推导而得到
     for (int i = 0; i < N; i++) {
       adjScaledGrad.block<8, 3>(8 * i, 0) =
           gdC.block<8, 3>(8 * i, 0).array().colwise() * tInv.array();
     }
     A.solveAdj(adjScaledGrad);
+    //adjScaledGrad为M-T * K对c的偏导
     // addPropCtoP
     for (int i = 0; i < N - 1; i++) {
+      //b对于q的偏导，其实就是从b中找到对应给定的第i个路点的行
       gdP.col(i) = adjScaledGrad.row(8 * i + 7).transpose();
     }
+
+    //没用到
     gdHead = adjScaledGrad.topRows(4).transpose() * t.head<4>().asDiagonal();
     gdTail = adjScaledGrad.bottomRows(4).transpose() * t.head<4>().asDiagonal();
+
     // addPropCtoT
     gdT += headPVAJ.col(1).dot(adjScaledGrad.row(1));
     gdT += headPVAJ.col(2).dot(adjScaledGrad.row(2)) * 2.0 * t(1);
@@ -724,6 +762,7 @@ class MINCO_S4_Uniform {
 
   inline double getTrajSnapCost() const {
     double energy = 0.0;
+    //snap的平方再积分
     for (int i = 0; i < N; i++) {
       energy += 576.0 * c.row(8 * i + 4).squaredNorm() * t(1) +
                 2880.0 * c.row(8 * i + 4).dot(c.row(8 * i + 5)) * t(2) +

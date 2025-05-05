@@ -21,6 +21,8 @@ add_message_files(
   Px4ctrlDebug.msg
   TakeoffLand.msg
   Onboard.msg
+  FsmState.msg
+  GuidanceState.msg
 )
 
 generate_messages(

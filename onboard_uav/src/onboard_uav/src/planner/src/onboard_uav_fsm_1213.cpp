@@ -20,7 +20,7 @@
 // uint8 TAKEOFF_COMPLETE = 10 # 起飞完成
 // uint8 MISSION_COMPLETE = 20 # 任务完成
 // uint8 LAND_COMPLETE = 30 # 降落完成
-// uint8 RETURN_COMPLETE = 40 # 返航完成
+// uint8   = 40 # 返航完成
 // uint8 PRECISION_LANDING_COMPLETE = 50 # 精准降落完成
 
 /**
@@ -40,14 +40,13 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("docking/return_pos_offset_x", docking_param_.return_pos_offset[0], 0.0);
     nh.param("docking/return_pos_offset_y", docking_param_.return_pos_offset[1], 0.0);
     nh.param("docking/return_pos_offset_z", docking_param_.return_pos_offset[2], 1.0);
-    nh.param("docking/descend_hor_bias", docking_param_.descend_hor_bias, 0.4);
-    nh.param("docking/descend_ver_bias", docking_param_.descend_ver_bias, 0.7);
-    nh.param("docking/rec_hor_bias", docking_param_.rec_hor_bias, 0.3);
-    nh.param("docking/rec_ver_bias", docking_param_.rec_ver_bias, 0.35);
-    nh.param("docking/final_hor_bias", docking_param_.final_hor_bias, 0.14);
-    nh.param("docking/final_ver_bias", docking_param_.final_ver_bias, 0.14);
-    nh.param("docking/allowed_landing_time_s", docking_param_.allowed_landing_time_s, 300.0);
+    nh.param("docking/horizontal_distance_tolerance", docking_param_.horizontal_distance_tolerance, 0.5);
+    nh.param("docking/horizontal_approach_height", docking_param_.horizontal_approach_height, 2.0);
+    nh.param("docking/final_landing_height", docking_param_.final_landing_height, 0.2);
     nh.param("docking/allowed_final_landing_time_s", docking_param_.allowed_final_landing_time_s, 10.0);
+    nh.param("docking/landing_acceptable_error", docking_param_.landing_acceptable_error, 0.1);
+    nh.param("docking/landing_complete_height", docking_param_.landing_complete_height, 0.1);
+    nh.param("docking/allowed_landing_time_s", docking_param_.allowed_landing_time_s, 300.0);
     nh.param("docking/allowed_retry_hover_time_s", docking_param_.allowed_retry_hover_time_s, 10.0);
     nh.param("docking/retry_climb_height", docking_param_.retry_climb_height, 2.0);
     nh.param("docking/allowed_retry_num", docking_param_.allowed_retry_num, 10);
@@ -56,37 +55,31 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("msg_timeout/onboard", msg_timeout_.onboard, 0.5);
     nh.param("msg_timeout/landing_target", msg_timeout_.landing_target, 0.1);
 
-    uav_local_pose_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/pose", 1, &OnboardUavFsm::UavLocalPoseCallback, this);
-    uav_local_vel_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/velocity_local", 1, &OnboardUavFsm::UavLocalVelCallback, this);
+    uav_local_pose_sub_ = nh.subscribe("/mavros/local_position/pose", 1, &OnboardUavFsm::UavLocalPoseCallback, this);
+    uav_local_vel_sub_ = nh.subscribe("/mavros/local_position/velocity_local", 1, &OnboardUavFsm::UavLocalVelCallback, this);
 
-    uav_state_sub_ = nh.subscribe("/Sub_UAV/mavros/state", 1, &OnboardUavFsm::UavStateCallback, this);
-    uav_odom_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/odom", 1, &OnboardUavFsm::UavOdomCallback, this);
+    uav_state_sub_ = nh.subscribe("/mavros/state", 1, &OnboardUavFsm::UavStateCallback, this);
+    uav_odom_sub_ = nh.subscribe("/mavros/local_position/odom", 1, &OnboardUavFsm::UavOdomCallback, this);
     std::string onboard_msg_sub_name = "/uav" + std::to_string(onboard_uav_param_.uav_id) + "/onboard_msg";
     onboard_msg_sub_ = nh.subscribe(onboard_msg_sub_name, 1, &OnboardUavFsm::OnboardMsgCallback, this);
     // std::string landing_target_pose_topic_name = std::to_string(onboard_uav_param_.uav_id) + "/landing_target_pose";
-    landing_target_pose_sub_ = nh.subscribe("/landing_target_pose/ESKF", 1, &OnboardUavFsm::LandingTargetPoseCallback, this);
+    landing_target_pose_sub_ = nh.subscribe("/landing_target_pose_true", 1, &OnboardUavFsm::LandingTargetPoseCallback, this);
 
     heartbeat_pub_ = nh.advertise<std_msgs::Empty>("/heartbeat", 1); 
     takeoff_land_cmd_pub_ = nh.advertise<quadrotor_msgs::TakeoffLand>("/px4ctrl/takeoff_land", 1);
     trajectory_pub_ = nh.advertise<quadrotor_msgs::PolyTraj>("/trajectory", 1);
     std::string onboard_msg_pub_name = "/uav" + std::to_string(onboard_uav_param_.target_uav_id) + "/onboard_msg";
     onboard_msg_pub_ = nh.advertise<quadrotor_msgs::Onboard>(onboard_msg_pub_name, 1);
-    arm_disarm_client_ = nh.serviceClient<mavros_msgs::CommandLong>("/Sub_UAV/mavros/cmd/command");
+    arm_disarm_client_ = nh.serviceClient<mavros_msgs::CommandLong>("/mavros/cmd/command");
     onboard_uav_state_pub_ = nh.advertise<std_msgs::Float32>("/onboard_uav_state", 1);
 
     //lc add
     px4_ctl_choose_ = nh.advertise<std_msgs::Int32>("/px4_ctl_choose", 10);
-    position_ctl_pub_ = nh.advertise<mavros_msgs::PositionTarget>("/Sub_UAV/mavros/setpoint_raw/local", 10);
-
-    mother_move_pub_ = nh.advertise<std_msgs::Int32>("/mother_move/cmd",1);
+    position_ctl_pub_ = nh.advertise<mavros_msgs::PositionTarget>("mavros/setpoint_raw/local", 10);
 
     //uwb_distance_sub_  = nh.subscribe("nlink_linktrack_nodeframe2", 1000, &OnboardUavFsm::Uwb_distance_callback,this);
     uwb_distance_sub_  = nh.subscribe("/fake_uwb_distance", 10, &OnboardUavFsm::Uwb_distance_callback,this);
     
-    //远程引导标志位pub与进入降落标志位pub 
-    remote_ctrl_pub_ = nh.advertise<quadrotor_msgs::GuidanceState>("/remote_ctrl/state", 1);
-    fsm_state_pub_ = nh.advertise<quadrotor_msgs::FsmState>("/fsm_state", 1);
-
     // 创建路径规划器实例
     traj_opt_ptr_ = std::make_shared<traj_opt::TrajOpt>(nh);
     // 创建可视化实例
@@ -94,8 +87,6 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
 
     // 初始化线程
     uav_disarm_thread_ = std::thread(&OnboardUavFsm::UavDisarm, this);
-
-
 
     fsm_hz_ = 10;
     replan_hz_ = 10;
@@ -295,7 +286,7 @@ bool OnboardUavFsm::LandingTargetPoseIsReceived(const ros::Time &now_time)
     // while (landing_target_pose_lock_.test_and_set(std::memory_order_acquire))
     //     ;
     // 打印时间戳
-    //ROS_WARN("landing_target_pose_ timeout: %f, %f", now_time.toSec(), landing_target_pose_.header.stamp.toSec());
+    // ROS_INFO("landing_target_pose_ timeout: %f", now_time.toSec() - landing_target_pose_.header.stamp.toSec());
     bool is_received = now_time.toSec() - landing_target_pose_.header.stamp.toSec() < msg_timeout_.landing_target;
     // landing_target_pose_lock_.clear(std::memory_order_release);
     return is_received;
@@ -517,7 +508,7 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
         }
 
         // 出现故障时，进入故障保护状态
-        // 此处状态切换有点乱 后续需要修改
+
         // 当接收到母机的对接指令时，进入对接状态
         if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
         {
@@ -537,30 +528,6 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
         }
 
         RunMissionMode();
-        //Remote_Guidance();
-        break;
-    }
-
-    case OnboardUavStates::REMOTE_GUIDE:
-    {
-        // 当接收到母机的对接指令时，进入对接状态
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
-        {
-            hover_flag_ = false;
-            // is_first_run_ = true;
-            docking_state_ = DockingStates::INIT;
-            onboard_uav_state_ = OnboardUavStates::DOCKING;
-            ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
-            break;
-        }
-        // 当接收到母机的降落指令时，进入降落状态
-        else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
-        {
-            onboard_uav_state_ = OnboardUavStates::LAND;
-            ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
-            break;
-        }
-
         Remote_Guidance();
         break;
     }
@@ -639,7 +606,6 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
 
     // update timer
     // fsm_dt_s_ = event.current_real.toSec() - event.last_real.toSec();
-    Pub_FSM_State();
 
     return;
 }
@@ -649,7 +615,6 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
  */
 void OnboardUavFsm::RunMissionMode()
 {
-    static int count;
     if(rg_flag == 0)
     {
         // 执行任务
@@ -670,31 +635,19 @@ void OnboardUavFsm::RunMissionMode()
         // 到达指定点后，发送 Onboard::MISSION_COMPLETE，等待下一步指令
         if ((uav_odom_pos_ - target_pos_).norm() < 0.3)
         {
-            count ++;
-            if(count > 0 && count < 5){
-                std_msgs::Int32 mother_move_msg;
-                mother_move_msg.data = 1;
-                mother_move_pub_.publish(mother_move_msg);
-            }
-
-            if(count > 25){
-                count = 0;
-                onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
-                //onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
-                PubOnboardMsg();
-                rg_flag = 1;
-                // 发布悬停
-                // if (!hover_flag_)
-                // {
-                //     // target_pos_ = uav_odom_pos_;
-                //     hover_flag_ = true;
-                //     // PubHoverPos();
-                //     ROS_INFO("MISSION COMPLETE: Hover"); // TODO 有bug，会一直打印
-                //执行完任务后进入远程引导
-                onboard_uav_state_= OnboardUavStates::REMOTE_GUIDE;
-                // }
-                return;
-            }
+            onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
+            //onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
+            PubOnboardMsg();
+            rg_flag = 1;
+            // 发布悬停
+            // if (!hover_flag_)
+            // {
+            //     // target_pos_ = uav_odom_pos_;
+            //     hover_flag_ = true;
+            //     // PubHoverPos();
+            //     ROS_INFO("MISSION COMPLETE: Hover"); // TODO 有bug，会一直打印
+            // }
+            return;
         }
 
         // 调用规划器，规划任务轨迹
@@ -739,11 +692,7 @@ void OnboardUavFsm::RunMissionMode()
  * @brief 远程引导模式
  */
 void OnboardUavFsm::Remote_Guidance()
-{   
-
-        //PUB FLAG
-    Pub_Guidance_State();
-
+{
     static int i = 0;
     static int hover_times = 0;
     int mean_time = 10;
@@ -903,10 +852,27 @@ void OnboardUavFsm::Remote_Guidance()
         }
         
         //px4 position control
-        Pub_px4_cmd(ite_est_p.x(), ite_est_p.y(), ite_est_p.z());
+        P_target.header.stamp = ros::Time::now();
+        P_target.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
+        P_target.type_mask =			//使用位置控制
+        //mavros_msgs::PositionTarget::IGNORE_PX |
+        //mavros_msgs::PositionTarget::IGNORE_PY |
+        //mavros_msgs::PositionTarget::IGNORE_PZ |
+        mavros_msgs::PositionTarget::IGNORE_VX |
+        mavros_msgs::PositionTarget::IGNORE_VY |
+        mavros_msgs::PositionTarget::IGNORE_VZ |
+        mavros_msgs::PositionTarget::IGNORE_AFX |
+        mavros_msgs::PositionTarget::IGNORE_AFY |
+        mavros_msgs::PositionTarget::IGNORE_AFZ |
+        mavros_msgs::PositionTarget::FORCE |
+        mavros_msgs::PositionTarget::IGNORE_YAW;
+        mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
+        P_target.position.x = ite_est_p.x();
+        P_target.position.y = ite_est_p.y();
+        P_target.position.z = ite_est_p.z();
+
+        position_ctl_pub_.publish(P_target);
     }
-
-
 
     else
         return;
@@ -1009,6 +975,9 @@ void OnboardUavFsm::iterate_estimate()
         ite_k++;
     }
 
+    px4_choose_msg.data = 1;
+    px4_ctl_choose_.publish(px4_choose_msg);
+
     ROS_INFO("k:bias: %d,%f,%f,%f",ite_k,ite_c2d_q.x(),ite_c2d_q.y(),ite_c2d_q.z());
     //ROS_INFO("k:bias: %d,%f,%f,%f",ite_k,uav_odom_pos_.x() - geo_est_c2d.x()-dock_r2m.x(),uav_odom_pos_.y() - geo_est_c2d.y()-dock_r2m.y(),uav_odom_pos_.z() - geo_est_c2d.z()-dock_r2m.z());
     ROS_INFO("ite_vel: [%f, %f, %f]", ite_vel.x(), ite_vel.y(), ite_vel.z());
@@ -1038,7 +1007,7 @@ void OnboardUavFsm::RunDockingMode()
     }
 
     case DockingStates::LANDING:
-    {   
+    {
         // 当标签不可见，且不是 FINAL_LANDING 时，进入重试状态
         // 当降落超时时，进入故障保护状态
         traj_opt_ptr_->setLandingParams(true);
@@ -1115,7 +1084,7 @@ void OnboardUavFsm::RunDockingReturn()
         // onboard_msg_lock_.clear(std::memory_order_release);
         target_vel_ = Eigen::Vector3d::Zero();
         target_q_ = Eigen::Quaterniond::Identity();
-        //ROS_INFO("111");
+        ROS_INFO("111");
         // DEBUG 打印目标位姿
         //PrintUAVPosVel();
     }
@@ -1126,8 +1095,6 @@ void OnboardUavFsm::RunDockingReturn()
     if ((OnboardMsgIsReceived(ros::Time::now()) && IsOnboardCommand(quadrotor_msgs::Onboard::ALLOW_PRECISION_LANDING)) || is_docking_retry_)
     // if (IsOnboardCommand(quadrotor_msgs::Onboard::ALLOW_PRECISION_LANDING))
     {
-        px4_choose_msg.data = 0;
-        px4_ctl_choose_.publish(px4_choose_msg);
         if (LandingTargetPoseIsReceived(ros::Time::now()))
         {
             is_first_run_ = true;
@@ -1203,8 +1170,7 @@ void OnboardUavFsm::RunDockingLanding()
 {
     // 当标签不可见，且不是 FINAL_LANDING 时，进入重试状态
     // TODO FINAL_LANDING需要限制时间，超时进入重试状态
-    //if (!LandingTargetPoseIsReceived(ros::Time::now()) && landing_state_ != LandingStates::FINAL_LANDING)
-    if (!LandingTargetPoseIsReceived(ros::Time::now()) )
+    if (!LandingTargetPoseIsReceived(ros::Time::now()) && landing_state_ != LandingStates::FINAL_LANDING)
     {
         traj_opt_ptr_->setLandingParams(false);
         retry_state_ = RetryStates::INIT;
@@ -1212,6 +1178,18 @@ void OnboardUavFsm::RunDockingLanding()
         ROS_WARN("DOCKING_LANDING: Landing target lost! Switch to RETRY");
         return;
     }
+
+    // //TODO 有bug
+    // // 当对接降落超时时，进入故障保护状态
+    // if (landing_state_ != LandingStates::INIT && (ros::Time::now() - docking_landing_start_time_).toSec() > docking_param_.allowed_landing_time_s)
+    // {
+    //     // 打印docking_landing_start_time_
+    //     ROS_INFO("docking_landing_start_time_: %f", docking_landing_start_time_.toSec());
+    //     ROS_ERROR("DOCKING_LANDING: Landing timeout!");
+    //     onboard_uav_state_ = OnboardUavStates::FAIL_SAFE;
+    //     ROS_INFO("\033[32mDOCKING_LANDING: Switch to FAIL_SAFE\033[0m");
+    //     return;
+    // }
 
     // 计算无人机与标签的水平距离
     static Eigen::Vector3d relative_pos = Eigen::Vector3d::Zero();
@@ -1221,7 +1199,6 @@ void OnboardUavFsm::RunDockingLanding()
     relative_pos.x() = landing_target_pose_.pose.position.x - uav_odom_pos_.x();
     relative_pos.y() = landing_target_pose_.pose.position.y - uav_odom_pos_.y();
     relative_pos.z() = landing_target_pose_.pose.position.z - uav_odom_pos_.z();
-    
     ROS_INFO("relative_pos:%f,%f,%f",relative_pos.x(),relative_pos.y(),relative_pos.z());
     // landing_target_pose_lock_.clear(std::memory_order_release);
     // horizontal_distance = std::sqrt(relative_pos.x() * relative_pos.x() + relative_pos.y() * relative_pos.y());
@@ -1241,7 +1218,40 @@ void OnboardUavFsm::RunDockingLanding()
         
         break;
     }
+    // case LandingStates::HORIZONTAL_APPROACH:
+    // {
+    //     // 当无人机与标签的水平距离小于水平距离容差，且无人机高度小于水平接近高度时，进入在目标上方下降状态
+    //     // if (horizontal_distance < docking_param_.horizontal_distance_tolerance && -relative_pos.z() < docking_param_.horizontal_approach_height)
+    //     if (horizontal_distance < docking_param_.horizontal_distance_tolerance)
+    //     {
+    //         // is_first_run_ = true; // 飞行中不需要重新规划
+    //         landing_state_ = LandingStates::DESCEND_ABOVE_TARGET;
+    //         ROS_INFO("\033[32mDOCKING_HORIZONTAL_APPROACH: Switch to DESCEND_ABOVE_TARGET\033[0m");
+    //         break;
+    //     }
 
+    //     // 设置目标点
+    //     // while (landing_target_pose_lock_.test_and_set(std::memory_order_acquire))
+    //     //     ;
+    //     target_pos_.x() = landing_target_pose_.pose.position.x;
+    //     target_pos_.y() = landing_target_pose_.pose.position.y;
+    //     target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.horizontal_approach_height;
+    //     target_vel_ = Eigen::Vector3d::Zero();
+    //     target_q_.x() = landing_target_pose_.pose.orientation.x;
+    //     target_q_.y() = landing_target_pose_.pose.orientation.y;
+    //     target_q_.z() = landing_target_pose_.pose.orientation.z;
+    //     target_q_.w() = landing_target_pose_.pose.orientation.w;
+    //     // landing_target_pose_lock_.clear(std::memory_order_release);
+
+    //     // 调用规划器，规划水平接近轨迹
+    //     if (PlanTrajectory())
+    //     {
+    //         is_replan_ = false;
+    //         // 打印目标位姿
+    //         // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f",target_pos_.x(),target_pos_.y(),target_pos_.z());
+    //     }
+    //     break;
+    // }
     case LandingStates::DESCEND_ABOVE_TARGET:
     {
         // // 当无人机与标签的水平距离大于水平距离容差时，重新进入水平接近状态
@@ -1253,105 +1263,56 @@ void OnboardUavFsm::RunDockingLanding()
         //     break;
         // }
         // 当无人机与标签的垂直距离小于最终下降高度，且水平距离小于允许降落误差时，进入最终降落状态
-
-        static int landing_descend_complete_count = 0;
-
-        if (std::fabs(relative_pos.z()) < docking_param_.descend_ver_bias && horizontal_distance < docking_param_.descend_ver_bias)
+        if (-relative_pos.z() < docking_param_.final_landing_height && horizontal_distance < docking_param_.landing_acceptable_error)
         {
-            landing_descend_complete_count++;
             // is_first_run_ = true; // 飞行中不需要重新规划
-            if(landing_descend_complete_count > 5)
-            {
-                final_landing_start_time_ = ros::Time::now();
-                landing_state_ = LandingStates::RE_CURRATE;
-                ROS_INFO("\033[32mDOCKING_DESCEND_ABOVE_TARGET: Switch to RE_CURRATE\033[0m");
-                break;
-            }
+            final_landing_start_time_ = ros::Time::now();
+            landing_state_ = LandingStates::FINAL_LANDING;
+            ROS_INFO("\033[32mDOCKING_DESCEND_ABOVE_TARGET: Switch to FINAL_LANDING\033[0m");
+            break;
         }
 
-        else
-        {
-            landing_descend_complete_count = 0;
-        }
-
+        // 设置降落目标点
+        // while (landing_target_pose_lock_.test_and_set(std::memory_order_acquire))
+        //     ;
         target_pos_.x() = landing_target_pose_.pose.position.x;
         target_pos_.y() = landing_target_pose_.pose.position.y;
-        target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.descend_ver_bias;
+        // target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.landing_complete_height;
+        target_pos_.z() = landing_target_pose_.pose.position.z;
         target_vel_ = Eigen::Vector3d::Zero();
+        //target_vel_.z() = -0.05;
         target_q_.x() = landing_target_pose_.pose.orientation.x;
         target_q_.y() = landing_target_pose_.pose.orientation.y;
         target_q_.z() = landing_target_pose_.pose.orientation.z;
         target_q_.w() = landing_target_pose_.pose.orientation.w;
+        // landing_target_pose_lock_.clear(std::memory_order_release);
 
         // 调用规划器，规划在目标上方下降轨迹
-        // if (PlanTrajectory())
-        // {
-        //     is_replan_ = false;
-        //     // 打印目标位姿
-        //     // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        // }
-
-        //lc change
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
-        
-
+        if (PlanTrajectory())
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
         break;
     }
-
-    case LandingStates::RE_CURRATE:
-    {
-        static int landing_rec_count = 0;
-
-        if (std::fabs(relative_pos.z()) < docking_param_.rec_ver_bias && horizontal_distance < docking_param_.rec_hor_bias)
-        {
-            landing_rec_count++;
-            // is_first_run_ = true; // 飞行中不需要重新规划
-            if(landing_rec_count > 5)
-            {
-                final_landing_start_time_ = ros::Time::now();
-                landing_state_ = LandingStates::FINAL_LANDING;
-                ROS_INFO("\033[32mDOCKING_RE_CURRATE: Switch to FINAL_LANDING\033[0m");
-                break;
-            }
-        }
-
-        else
-        {
-            landing_rec_count = 0;
-        }
-
-        target_pos_.x() = landing_target_pose_.pose.position.x;
-        target_pos_.y() = landing_target_pose_.pose.position.y;
-        target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.rec_hor_bias;
-        target_vel_ = Eigen::Vector3d::Zero();
-        target_q_.x() = landing_target_pose_.pose.orientation.x;
-        target_q_.y() = landing_target_pose_.pose.orientation.y;
-        target_q_.z() = landing_target_pose_.pose.orientation.z;
-        target_q_.w() = landing_target_pose_.pose.orientation.w;
-
-        // 调用规划器，规划在目标上方下降轨迹
-        // if (PlanTrajectory())
-        // {
-        //     is_replan_ = false;
-        //     // 打印目标位姿
-        //     // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        // }
-
-        //lc change
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
-        
-
-        break;
-    }
-
-
     case LandingStates::FINAL_LANDING:
     {
+        // TODO 当最终降落超时时，进入重试状态
+        // 当标签可见时，最终下降->重试悬停->下降->最终下降
+        // 当标签不可见时，最终下降->重试悬停->爬升->返航->下降->最终下降
+        // if((ros::Time::now() - final_landing_start_time_).toSec() > docking_param_.allowed_final_landing_time_s)
+        // {
+        //     ROS_ERROR("DOCKING_FINAL_LANDING: Final landing timeout!");
+        //     retry_state_ = RetryStates::INIT;
+        //     docking_state_ = DockingStates::RETRY;
+        //     ROS_INFO("\033[32mDOCKING_LANDING: Switch to RETRY\033[0m");
+        //     break;
+        // }
 
         // 当无人机与标签的垂直距离小于降落完成高度，且水平距离小于允许降落误差时，进入降落完成状态
         static int landing_complete_count = 0;
-        static int landing_horizon_error = 0;
-        if (std::fabs(relative_pos.z()) < docking_param_.final_ver_bias && horizontal_distance < docking_param_.final_hor_bias)
+        if (std::fabs(relative_pos.z()) < docking_param_.landing_complete_height && horizontal_distance < docking_param_.landing_acceptable_error)
         {
             landing_complete_count++;
             if (landing_complete_count > 3)
@@ -1364,24 +1325,6 @@ void OnboardUavFsm::RunDockingLanding()
         else
         {
             landing_complete_count = 0;
-        }
-
-        //如果高度已经达到目标点但水平差距较大，此时小飞机在大飞机平板上由于摩擦力很难再进行水平矫正，进入重试阶段
-        if (std::fabs(relative_pos.z()) < docking_param_.final_ver_bias && horizontal_distance > 0.18f)
-        {
-            landing_horizon_error ++;
-            if(landing_horizon_error > 3)
-            {
-                retry_state_ = RetryStates::INIT;
-                docking_state_ = DockingStates::RETRY;
-                ROS_INFO("Horizon_bias_error,switch to retry state");
-                break;
-            }
-
-        }
-        else
-        {
-            landing_horizon_error = 0;
         }
 
         // 当目标点更新时，重新规划轨迹
@@ -1400,19 +1343,47 @@ void OnboardUavFsm::RunDockingLanding()
             target_q_.z() = landing_target_pose_.pose.orientation.z;
             target_q_.w() = landing_target_pose_.pose.orientation.w;
 
-
+            // 调用规划器，规划最终降落轨迹
+            // if (PlanTrajectory())
+            // {
+            //     is_replan_ = false;
+            //     is_landing_target_pose_updated_ = false;
+            // }
         }
 
-        //如果最终降落阶段没识别到二维码，则抬高高度
-        //如果没识别到不会进入这里，直接进入retry
         else
         {
             target_pos_.z() = uav_odom_pos_.z() + 0.25;
-            ROS_INFO("LOSE TARGET--- DANGER");
+            ROS_INFO("LOSE TARGET --- DANGER");
         }
 
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
+        //lc change
+        px4_choose_msg.data = 1;
+        px4_ctl_choose_.publish(px4_choose_msg);
 
+        //px4 position control
+        P_target.header.stamp = ros::Time::now();
+        P_target.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
+        P_target.type_mask =			//使用位置控制
+        //mavros_msgs::PositionTarget::IGNORE_PX |
+        //mavros_msgs::PositionTarget::IGNORE_PY |
+        //mavros_msgs::PositionTarget::IGNORE_PZ |
+        mavros_msgs::PositionTarget::IGNORE_VX |
+        mavros_msgs::PositionTarget::IGNORE_VY |
+        mavros_msgs::PositionTarget::IGNORE_VZ |
+        mavros_msgs::PositionTarget::IGNORE_AFX |
+        mavros_msgs::PositionTarget::IGNORE_AFY |
+        mavros_msgs::PositionTarget::IGNORE_AFZ |
+        mavros_msgs::PositionTarget::FORCE |
+        mavros_msgs::PositionTarget::IGNORE_YAW;
+        mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
+        P_target.position.x = target_pos_.x();
+        P_target.position.y = target_pos_.y();
+        P_target.position.z = target_pos_.z();
+
+        position_ctl_pub_.publish(P_target);
+    
+        // landing_target_pose_lock_.clear(std::memory_order_release);
         break;
     }
     default:
@@ -1485,11 +1456,15 @@ void OnboardUavFsm::RunDockingRetry()
             //PrintUAVPosVel();
             break;
         }
-
-        target_pos_ = uav_odom_pos_;
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
-        ROS_INFO("DOCKING_RETRY: Hover");
-  
+        // 在指定位置悬停
+        if (!hover_flag_)
+        {
+            target_pos_ = uav_odom_pos_;
+            // target_pos_.z() += 0.5;
+            hover_flag_ = true;
+            PubHoverPos();
+            ROS_INFO("DOCKING_RETRY: Hover");
+        }
 
         break;
     }
@@ -1532,15 +1507,13 @@ void OnboardUavFsm::RunDockingRetry()
             //PrintUAVPosVel();
             break;
         }
-
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
         // 爬升到指定位置
-        // if (PlanTrajectory())
-        // {
-        //     is_replan_ = false;
-        //     // 打印目标位姿
-        //     // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        // }
+        if (PlanTrajectory())
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
         break;
     }
     }
@@ -1598,7 +1571,6 @@ bool OnboardUavFsm::PlanTrajectory()
     {
         is_first_run_ = false;
         replan_start_time_ = replan_start_time;
-        //PubTrajectory函数将经过优化器优化后的轨迹poly_traj_发布
         PubTrajectory(replan_start_time_);
         vis_ptr_->visualize_traj(poly_traj_, "onboard_uav_trajectory");
 
@@ -1608,7 +1580,6 @@ bool OnboardUavFsm::PlanTrajectory()
             //std::cout << std::fixed << std::setprecision(2) << "[current] pos:" << uav_odom_pos_.transpose() << ";  ";
             //std::cout << std::fixed << std::setprecision(2) << "vel: " << uav_odom_vel_.transpose() << std::endl;
 
-            //调试使用
             std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> arrows;
             for (double dt = 0; dt < poly_traj_.getTotalDuration(); dt += 0.3)
             {
@@ -1721,156 +1692,6 @@ void OnboardUavFsm::PubOnboardUavState()
 
     onboard_uav_state_pub_.publish(state_msg);
 }
-
-void OnboardUavFsm::Pub_px4_cmd(float target_x, float target_y, float target_z)
-{
-        px4_choose_msg.data = 1;
-        px4_ctl_choose_.publish(px4_choose_msg);
-
-        //px4 position control
-        P_target.header.stamp = ros::Time::now();
-        P_target.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
-        P_target.type_mask =			//使用位置控制
-        //mavros_msgs::PositionTarget::IGNORE_PX |
-        //mavros_msgs::PositionTarget::IGNORE_PY |
-        //mavros_msgs::PositionTarget::IGNORE_PZ |
-        mavros_msgs::PositionTarget::IGNORE_VX |
-        mavros_msgs::PositionTarget::IGNORE_VY |
-        mavros_msgs::PositionTarget::IGNORE_VZ |
-        mavros_msgs::PositionTarget::IGNORE_AFX |
-        mavros_msgs::PositionTarget::IGNORE_AFY |
-        mavros_msgs::PositionTarget::IGNORE_AFZ |
-        mavros_msgs::PositionTarget::FORCE |
-        mavros_msgs::PositionTarget::IGNORE_YAW;
-        mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
-        P_target.position.x = target_x;
-        P_target.position.y = target_y;
-        P_target.position.z = target_z;
-
-        position_ctl_pub_.publish(P_target);
-}
-
-void OnboardUavFsm::Pub_Guidance_State()
-{
-    guidance_state_.header.stamp = ros::Time::now();
-    guidance_state_.uav_id = "Sub-UAV";
-    guidance_state_.Guidance_mode = rg_flag;
-    switch (rg_flag)
-    {
-        case 1:
-            guidance_state_.Guidance_mode_s = "GO_4points";
-            break;
-        case 2:
-            guidance_state_.Guidance_mode_s = "GEO_EST";
-            break;
-        case 3:
-            guidance_state_.Guidance_mode_s = "ITE_EST";
-            break;
-        default:
-            break;
-    }
-
-    guidance_state_.geo_est_x = geo_est_c2d.x() + dock_r2m.x();
-    guidance_state_.geo_est_y = geo_est_c2d.y() + dock_r2m.y();
-    guidance_state_.geo_est_z = geo_est_c2d.z() + dock_r2m.z();
-
-    guidance_state_.ite_est_x = ite_est_p.x();
-    guidance_state_.ite_est_y = ite_est_p.y();
-    guidance_state_.ite_est_z = ite_est_p.z();
-
-    guidance_state_.ite_err_x = ite_c2d_q.x() - dock_r2m.x();
-    guidance_state_.ite_err_y = ite_c2d_q.y() - dock_r2m.y();
-    guidance_state_.ite_err_z = ite_c2d_q.z() - dock_r2m.z();
-
-    remote_ctrl_pub_.publish(guidance_state_);
-
-}
-
-void OnboardUavFsm::Pub_FSM_State()
-{
-    fsm_state_.header.stamp = ros::Time::now();
-    fsm_state_.uav_id = 1;//Sub-UAV
-    fsm_state_.fsm_state = onboard_uav_state_;
-    fsm_state_.docking_state = docking_state_;
-    fsm_state_.landing_state = static_cast<uint8_t>(landing_state_);
-
-    fsm_state_.uav_id_s = "Sub-UAV";
-
-    switch (onboard_uav_state_)
-    {
-    case OnboardUavStates::IDLE:
-        fsm_state_.fsm_state_s = "IDLE";
-        break;
-    case OnboardUavStates::TAKEOFF:
-        fsm_state_.fsm_state_s = "TAKEOFF";
-        break;
-    case OnboardUavStates::MISSION:
-        fsm_state_.fsm_state_s = "MISSION";
-        break;
-    case OnboardUavStates::REMOTE_GUIDE:
-        fsm_state_.fsm_state_s = "REMOTE_GUIDE";
-        break;
-    case OnboardUavStates::DOCKING:
-        fsm_state_.fsm_state_s = "DOCKING";
-        break;
-    case OnboardUavStates::LAND:
-        fsm_state_.fsm_state_s = "LAND";
-        break;
-    case OnboardUavStates::FAIL_SAFE:
-        fsm_state_.fsm_state_s = "FAIL_SAFE";
-        break;
-    default:
-        break;
-    }
-
-    if (onboard_uav_state_ == OnboardUavStates::DOCKING)
-    {
-        switch (docking_state_)
-        {
-        case DockingStates::INIT:
-            fsm_state_.docking_state_s = "INIT";
-            break;
-        case DockingStates::RETURN:
-            fsm_state_.docking_state_s = "RETURN";
-            break;
-        case DockingStates::LANDING:
-            fsm_state_.docking_state_s = "LANDING";
-            break;
-        case DockingStates::COMPLETE:
-            fsm_state_.docking_state_s = "COMPLETE";
-            break;
-        case DockingStates::RETRY:
-            fsm_state_.docking_state_s = "RETRY";
-            break;
-        default:
-            break;
-        }
-    }
-
-    if (docking_state_ == DockingStates::LANDING)
-    {
-        switch (landing_state_)
-        {
-        case LandingStates::INIT:
-            fsm_state_.landing_state_s = "INIT";
-            break;
-        case LandingStates::DESCEND_ABOVE_TARGET:
-            fsm_state_.landing_state_s = "DESCEND_ABOVE_TARGET";
-            break;
-        case LandingStates::RE_CURRATE:
-            fsm_state_.landing_state_s = "RE_CURRATE";
-            break;           
-        case LandingStates::FINAL_LANDING:
-            fsm_state_.landing_state_s = "FINAL_LANDING";
-            break;
-        default:
-            break;
-        }
-    }
-
-    fsm_state_pub_.publish(fsm_state_);
-}
-
 
 /**
  * @brief 打印机载无人机当前状态

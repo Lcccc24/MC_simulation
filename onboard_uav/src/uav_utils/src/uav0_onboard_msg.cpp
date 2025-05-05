@@ -236,11 +236,11 @@ public:
     {
         // 先发送 quadrotor_msgs::Onboard::DOCKING
         static int docking_count = 0;
-        if (docking_count++ < 30)
+        if (docking_count++ < 5)
         {
             onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::DOCKING;
         }
-        else if (docking_count > 30 && docking_count++ < 40)
+        else if (docking_count > 5 && docking_count++ < 10)
         {
             onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::ALLOW_RETURN;
         }

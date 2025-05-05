@@ -13,16 +13,16 @@ LandingPose::LandingPose(ros::NodeHandle &nh) : nh_(nh), tf_buffer_(), tf_listen
     nh_.param("docking/tag_frame_id", tag_param_.tag_frame_id, std::string("tag36h11"));
     nh_.param("docking/tag_offset_x", tag_param_.tag_offset_x, 0.0);
     nh_.param("docking/tag_offset_y", tag_param_.tag_offset_y, 0.250);
-    nh_.param("docking/tag_offset_z", tag_param_.tag_offset_z, 0.02);
+    nh_.param("docking/tag_offset_z", tag_param_.tag_offset_z, 0.0);
     nh_.param("docking/tag_offset_yaw", tag_param_.tag_offset_yaw, 0.0);
     nh_.param("docking/tag_valid_distance", tag_param_.tag_valid_distance, 3.0);
 
     nh_.param("msg_timeout/uav_vel", uav_vel_timeout_, 0.5);
     nh_.param("msg_timeout/tf", tf_timeout_, 0.5);
 
-    uav_vel_sub_ = nh_.subscribe("/mavros/local_position/velocity_body", 1, &LandingPose::UavVelCallback, this);
-    landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_raw", 1);
-    landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose", 1);
+    uav_vel_sub_ = nh_.subscribe("/Sub_UAV/mavros/local_position/velocity_body", 1, &LandingPose::UavVelCallback, this);
+    landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_Apritag", 1);
+    landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_EKF", 1);
 
     ekf_timer_ = nh_.createTimer(ros::Duration(1.0 / ekf_param_.ekf_hz), &LandingPose::EkfTimerCallback, this);
 
@@ -99,9 +99,21 @@ void LandingPose::GetTagPose()
     // 监听tf，当大标签的坐标变换不存在时，尝试获取小标签的坐标变换
     try
     {
+
+        //     // 获取变换
+        // geometry_msgs::TransformStamped ini_tag_tf_;
+        // ini_tag_tf_ = tf_buffer_.lookupTransform("camera_link", tag_param_.tag_frame_id, ros::Time(0));
+
+        // // 打印平移部分
+        // ROS_INFO("Translation: x = %f, y = %f, z = %f",
+        //         ini_tag_tf_.transform.translation.x,
+        //         ini_tag_tf_.transform.translation.y,
+        //         ini_tag_tf_.transform.translation.z);
+
         body_tag_tf_ = tf_buffer_.lookupTransform("base_link", tag_param_.tag_frame_id, ros::Time(0));
         if (body_tag_tf_.header.stamp < time_now - ros::Duration(tf_timeout_))
         {
+            ROS_INFO("not get tf");
             // try
             // {
             //     body_tag_tf_ = tf_buffer_.lookupTransform("base_link", tag_param_.small_tag_frame_id, ros::Time(0));
@@ -138,15 +150,19 @@ void LandingPose::GetTagPose()
             }
             tf2::doTransform(landing_target_pose_in_tag_frame_, landing_target_body_pose_raw_, body_tag_tf_);
             // 当z轴距离大于有效检测距离时，认为大标签位姿不可靠
+
+            //ROS_INFO("landing_target_local_body_pose_raw: %f,%f,%f",landing_target_body_pose_raw_.pose.position.x,landing_target_body_pose_raw_.pose.position.y,landing_target_body_pose_raw_.pose.position.z);   
+
             if (-landing_target_body_pose_raw_.pose.position.z > tag_param_.tag_valid_distance)
             {
                 get_new_landing_target_ = false;
             }
+            //ROS_INFO("get_new_landing_target_:%d",get_new_landing_target_);
         }
     }
     catch (tf2::TransformException &ex)
     {
-        // ROS_WARN("GetTagPose failed: %s", ex.what());
+        ROS_WARN("GetTagPose failed: %s", ex.what());
         return;
     }
     return;
@@ -241,12 +257,12 @@ void LandingPose::EkfTimerCallback(const ros::TimerEvent &event)
         // 滤波2s后认为初始化成功
         else if (ros::Time::now().toSec() - ekf_init_time_ > 2.0)
         {
-
+            
             ROS_INFO("EKF init success");
         }
     }
 
-    // 输出滤波结果
+    //输出滤波结果
     if (IsLandingTargetDetected())
     {
         landing_target_body_pose_.header = landing_target_body_pose_raw_.header;
@@ -255,16 +271,20 @@ void LandingPose::EkfTimerCallback(const ros::TimerEvent &event)
         landing_target_body_pose_.pose.position.z = z_ekf_.getPos();
         landing_target_body_pose_.pose.orientation = landing_target_body_pose_raw_.pose.orientation;
 
+        ROS_INFO("landing_target_local_body_pose_raw: %f,%f,%f",landing_target_body_pose_raw_.pose.position.x,landing_target_body_pose_raw_.pose.position.y,landing_target_body_pose_raw_.pose.position.z);
+
         // 转化为local ENU坐标系下的位姿后发布
         if (TransformLandingTargetPose())
         {
             landing_target_pose_raw_pub_.publish(landing_target_local_pose_raw_);
+            //lc add
+            ROS_INFO("landing_target_local_pose_raw_: %f,%f,%f",landing_target_local_pose_raw_.pose.position.x,landing_target_local_pose_raw_.pose.position.y,landing_target_local_pose_raw_.pose.position.z);
             landing_target_pose_pub_.publish(landing_target_local_pose_);
         }
     }
 
     // 获取定时器的周期
-    // ekf_dt_ = event.current_real.toSec() - event.last_real.toSec();
+    ekf_dt_ = event.current_real.toSec() - event.last_real.toSec();
 }
 
 /**

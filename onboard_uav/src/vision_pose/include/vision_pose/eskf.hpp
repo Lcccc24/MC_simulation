@@ -40,7 +40,7 @@ public:
     using MotionNoiseT = Eigen::Matrix<S, 18, 18>; // 运动噪声类型
     using VisionNoiseT = Eigen::Matrix<S, 6, 6>;   // 视觉噪声类型
     using OdomNoiseT = Eigen::Matrix<S, 3, 3>;     // 里程计噪声类型
-    using GnssNoiseT = Eigen::Matrix<S, 6, 6>;     // GNSS噪声类型
+    //using GnssNoiseT = Eigen::Matrix<S, 6, 6>;     // GNSS噪声类型
     using Mat18T = Eigen::Matrix<S, 18, 18>;       // 18维方差类型
     using NavStateT = NavState<S>;                 // 整体名义状态变量类型
 
@@ -137,8 +137,10 @@ public:
     // 设置坐标系常量
     void SetConstant(const Vec3d &p_sc, const Eigen::Quaterniond &q_sc, const Vec3d &p_mt, const Eigen::Quaterniond &q_mt)
     {
+        //SC 子机机体到相机变换
         p_sc_ = p_sc;
         R_sc_ = SO3(q_sc);
+        //MT 母机机体到二维码变换
         p_mt_ = p_mt;
         R_mt_ = SO3(q_mt);
     }
@@ -205,14 +207,19 @@ private:
         cov_ = J * cov_ * J.transpose();
     }
 
-    // 计算观测噪声
+    // 计算视觉观测噪声
     void CalcVisionNoise(double z)
     {
+        //假设xyz的位置噪声与z测量距离成正比，距离越大噪声越大
+        //假设姿态角噪声与距离无关，保持固定
         double z2 = z * z + 0.1;
-        double vxy2 = options_.vision_xy_noise_ * options_.vision_xy_noise_ * (std::fabs(z) + 0.3);
-        double vz2 = options_.vision_z_noise_ * options_.vision_z_noise_ * (std::fabs(z) + 0.3);
+        //位置噪声方差随着距离增大而线性增长
+        double vxy2 = options_.vision_xy_noise_ * options_.vision_xy_noise_ * (std::fabs(z)); //+0.3
+        double vz2 = options_.vision_z_noise_ * options_.vision_z_noise_ * (std::fabs(z));    //+0.3
+        //姿态角噪声方差保持不变
         double vrp2 = options_.vision_roll_pitch_noise_ * options_.vision_roll_pitch_noise_;
         double vy2 = options_.vision_yaw_noise_ * options_.vision_yaw_noise_;
+        //填充噪声协方差矩阵
         vision_noise_.diagonal() << vxy2, vxy2, vz2, vrp2, vrp2, vy2;
     }
 
@@ -268,10 +275,11 @@ using ESKFF = ESKF<float>;
 template <typename S>
 bool ESKF<S>::Predict(const sensor_msgs::Imu &imu, const sensor_msgs::Imu &imu_m)
 {
+    //确保imu时序正确
     assert(imu.header.stamp.toSec() >= current_time_);
 
     // R_em_ = SO3(q_em);
-
+    // 当时间间隔超过5倍IMU时间周期，重置时间戳
     double dt = imu.header.stamp.toSec() - current_time_;
     if (dt > (5 * options_.imu_dt_) || dt < 0)
     {
@@ -287,8 +295,11 @@ bool ESKF<S>::Predict(const sensor_msgs::Imu &imu, const sensor_msgs::Imu &imu_m
     Vec3d acce_m = Vec3d(imu_m.linear_acceleration.x, imu_m.linear_acceleration.y, imu_m.linear_acceleration.z);
 
     // nominal state 递推
+    //位置预测 融合双机线加速度
     VecT new_p = p_ + v_ * dt + 0.5 * (R_ * (acce - ba_)) * dt * dt - 0.5 * (acce_m - ba_m_) * dt * dt;
+    //速度预测 差分线加速度
     VecT new_v = v_ + R_ * (acce - ba_) * dt - (acce_m - ba_m_) * dt;
+    //姿态预测 融合陀螺仪偏置
     SO3 new_R = R_ * SO3::exp((gyro - bg_) * dt);
 
     R_ = new_R;
@@ -310,10 +321,22 @@ bool ESKF<S>::Predict(const sensor_msgs::Imu &imu, const sensor_msgs::Imu &imu_m
 
     // mean and cov prediction
     dx_ = F * dx_; // 这行其实没必要算，dx_在重置之后应该为零，因此这步可以跳过，但F需要参与Cov部分计算，所以保留
+    //协方差更新
     cov_ = F * cov_.eval() * F.transpose() + Q_;
     current_time_ = imu.header.stamp.toSec();
     // CalcVisionPose();
+
+    //lc add
+    // if (cov_.template block<3,3>(0,0).trace() > 1.0 ||   // 位置协方差>1m
+    //     cov_.template block<3,3>(6,6).trace() > 1.0) {  // 姿态协方差>1rad
+    //     ROS_ERROR("ESKF Divergence Detected! Resetting...");
+    //     Reset();
+    //     return false;
+    // }
+
     return true;
+
+
 }
 
 template <typename S>
@@ -323,9 +346,9 @@ bool ESKF<S>::ObserveVision(const geometry_msgs::PoseStamped &pose)
     // assert(pose.header.stamp.toSec() >= current_time_);
 
     // R_em_ = SO3(q_em);
-
+    
+    //视觉观测数据
     VecT p_ct(pose.pose.position.x, pose.pose.position.y, pose.pose.position.z);
-
     // SO3 R_ct(pose.pose.orientation.w, pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z);
     // SO3 R_ct = SO3::Quaternion(pose.pose.orientation.w, pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z);
     Eigen::Quaterniond q(pose.pose.orientation.w, pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z);
@@ -336,7 +359,7 @@ bool ESKF<S>::ObserveVision(const geometry_msgs::PoseStamped &pose)
         // 应该初始化名义状态
         // p_ct_ = p_ct;
         // R_ct_ = R_ct;
-
+        //转到世界系下表示
         p_ = p_mt_ - R_ * (p_sc_ + R_sc_.matrix() * p_ct);
         R_ = R_mt_ * R_ct.inverse() * R_sc_.inverse();
 
@@ -348,6 +371,7 @@ bool ESKF<S>::ObserveVision(const geometry_msgs::PoseStamped &pose)
         return true;
     }
 
+    //根据z轴偏差动态调整噪声协方差
     CalcVisionNoise(p_ct(2));
 
     ObserveSE3(SE3(R_ct, p_ct));
@@ -374,6 +398,7 @@ bool ESKF<S>::ObserveSE3(const SE3 &pose)
 
     // 卡尔曼增益和更新过程
     Mat6d V = vision_noise_;
+    
     Eigen::Matrix<S, 18, 6>
         K = cov_ * H.transpose() * (H * cov_ * H.transpose() + V).inverse();
 
@@ -388,6 +413,15 @@ bool ESKF<S>::ObserveSE3(const SE3 &pose)
 
     dx_ = K * innov;
     cov_ = (Mat18T::Identity() - K * H) * cov_;
+
+    // 增加零偏更新 lc add
+    // if (options_.update_bias_gyro_) {
+    //     bg_ += K.template block<3,1>(15,0); // 陀螺零偏更新
+    // }
+    // if (options_.update_bias_acce_) {
+    //     ba_ += K.template block<3,1>(9,0);  // 加计零偏更新
+    //     ba_m_ += K.template block<3,1>(12,0); // 母机加计零偏更新
+    // }
 
     UpdateAndReset();
     return true;

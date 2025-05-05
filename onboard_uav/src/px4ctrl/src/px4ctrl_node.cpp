@@ -24,17 +24,17 @@ int main(int argc, char *argv[])
     PX4CtrlFSM fsm(param, controller);
 
     ros::Subscriber state_sub =
-        nh.subscribe<mavros_msgs::State>("/mavros/state",
+        nh.subscribe<mavros_msgs::State>("/Sub_UAV/mavros/state",
                                          10,
                                          boost::bind(&State_Data_t::feed, &fsm.state_data, _1));
 
     ros::Subscriber extended_state_sub =
-        nh.subscribe<mavros_msgs::ExtendedState>("/mavros/extended_state",
+        nh.subscribe<mavros_msgs::ExtendedState>("/Sub_UAV/mavros/extended_state",
                                                  10,
                                                  boost::bind(&ExtendedState_Data_t::feed, &fsm.extended_state_data, _1));
 
     ros::Subscriber odom_sub =
-        nh.subscribe<nav_msgs::Odometry>("/mavros/local_position/odom",
+        nh.subscribe<nav_msgs::Odometry>("/Sub_UAV/mavros/local_position/odom",
                                          100,
                                          boost::bind(&Odom_Data_t::feed, &fsm.odom_data, _1),
                                          ros::VoidConstPtr(),
@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
                                                       ros::TransportHints().tcpNoDelay());
 
     ros::Subscriber imu_sub =
-        nh.subscribe<sensor_msgs::Imu>("/mavros/imu/data", // Note: do NOT change it to /mavros/imu/data_raw !!!
+        nh.subscribe<sensor_msgs::Imu>("/Sub_UAV/mavros/imu/data", // Note: do NOT change it to /mavros/imu/data_raw !!!
                                        100,
                                        boost::bind(&Imu_Data_t::feed, &fsm.imu_data, _1),
                                        ros::VoidConstPtr(),
@@ -57,13 +57,13 @@ int main(int argc, char *argv[])
     ros::Subscriber rc_sub;
     if (!param.takeoff_land.no_RC) // mavros will still publish wrong rc messages although no RC is connected
     {
-        rc_sub = nh.subscribe<mavros_msgs::RCIn>("/mavros/rc/in",
+        rc_sub = nh.subscribe<mavros_msgs::RCIn>("/Sub_UAV/mavros/rc/in",
                                                  10,
                                                  boost::bind(&RC_Data_t::feed, &fsm.rc_data, _1));
     }
 
     ros::Subscriber bat_sub =
-        nh.subscribe<sensor_msgs::BatteryState>("/mavros/battery",
+        nh.subscribe<sensor_msgs::BatteryState>("/Sub_UAV/mavros/battery",
                                                 100,
                                                 boost::bind(&Battery_Data_t::feed, &fsm.bat_data, _1),
                                                 ros::VoidConstPtr(),
@@ -80,15 +80,15 @@ int main(int argc, char *argv[])
     fsm.px4_choose_sub = nh.subscribe<std_msgs::Int32>("/px4_ctl_choose", 10,
         std::bind(&PX4CtrlFSM::px4_choose_callback, &fsm, std::placeholders::_1));
 
-    fsm.ctrl_FCU_pub = nh.advertise<mavros_msgs::AttitudeTarget>("/mavros/setpoint_raw/attitude", 10);
-    fsm.pos_ctrl_FCU_pub = nh.advertise<mavros_msgs::PositionTarget>("/mavros/setpoint_raw/local", 10);
+    fsm.ctrl_FCU_pub = nh.advertise<mavros_msgs::AttitudeTarget>("/Sub_UAV/mavros/setpoint_raw/attitude", 10);
+    fsm.pos_ctrl_FCU_pub = nh.advertise<mavros_msgs::PositionTarget>("/Sub_UAV/mavros/setpoint_raw/local", 10);
     fsm.traj_start_trigger_pub = nh.advertise<geometry_msgs::PoseStamped>("/traj_start_trigger", 10);
 
     fsm.debug_pub = nh.advertise<quadrotor_msgs::Px4ctrlDebug>("/debugPx4ctrl", 10); // debug
 
-    fsm.set_FCU_mode_srv = nh.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
-    fsm.arming_client_srv = nh.serviceClient<mavros_msgs::CommandBool>("/mavros/cmd/arming");
-    fsm.reboot_FCU_srv = nh.serviceClient<mavros_msgs::CommandLong>("/mavros/cmd/command");
+    fsm.set_FCU_mode_srv = nh.serviceClient<mavros_msgs::SetMode>("/Sub_UAV/mavros/set_mode");
+    fsm.arming_client_srv = nh.serviceClient<mavros_msgs::CommandBool>("/Sub_UAV/mavros/cmd/arming");
+    fsm.reboot_FCU_srv = nh.serviceClient<mavros_msgs::CommandLong>("/Sub_UAV/mavros/cmd/command");
 
     ros::Duration(0.5).sleep();
 

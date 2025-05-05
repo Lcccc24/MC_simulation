@@ -19,15 +19,16 @@
         <param name="docking/return_pos_offset_x" type="double" value="1.5" />
         <param name="docking/return_pos_offset_y" type="double" value="2.0" />
         <param name="docking/return_pos_offset_z" type="double" value="2.5" /> <!-- 不能为零 -->
-        <!-- <param name="docking/horizontal_distance_tolerance" type="double" value="0.5" />
-        <param name="docking/horizontal_approach_height" type="double" value="2.0" /> -->
-        <param name="docking/final_landing_height" type="double" value="0.5" />
-        <param name="docking/allowed_final_landing_time_s" type="double" value="30.0" />
-        <param name="docking/landing_acceptable_error" type="double" value="0.1" />
-        <param name="docking/landing_complete_height" type="double" value="0.15" />
+        <param name="docking/descend_hor_bias" type="double" value="0.4" />
+        <param name="docking/descend_ver_bias" type="double" value="0.7" />
+        <param name="docking/rec_hor_bias" type="double" value="0.3" />
+        <param name="docking/rec_ver_bias" type="double" value="0.35" />
+        <param name="docking/final_hor_bias" type="double" value="0.14" />
+        <param name="docking/final_ver_bias" type="double" value="0.14" />
         <param name="docking/allowed_landing_time_s" type="double" value="300.0" />
-        <param name="docking/allowed_retry_hover_time_s" type="double" value="10.0" />
-        <param name="docking/retry_climb_height" type="double" value="1.0" />
+        <param name="docking/allowed_final_landing_time_s" type="double" value="30.0" />
+        <param name="docking/allowed_retry_hover_time_s" type="double" value="3.0" />
+        <param name="docking/retry_climb_height" type="double" value="2.0" />
         <param name="docking/allowed_retry_num" type="int" value="10" />
         <param name="msg_timeout/odom" type="double" value="0.5" />
         <param name="msg_timeout/onboard" type="double" value="0.5" />
@@ -65,14 +66,14 @@
     <!-- rosparam set /uav0_onboard/flight_command 1 -->
     <node pkg="uav_utils" type="uav0_onboard_msg" name="uav0_onboard_msg" output="screen" />
         <param name="/uav0_onboard/use_param_ctrl" type="bool" value="false" />
-        <param name="/uav0_onboard/mission_pos_x" type="double" value="1.5" />
-        <param name="/uav0_onboard/mission_pos_y" type="double" value="1.5" />
-        <param name="/uav0_onboard/mission_pos_z" type="double" value="2.0" />
+        <param name="/uav0_onboard/mission_pos_x" type="double" value="-4.0" />
+        <param name="/uav0_onboard/mission_pos_y" type="double" value="-4.0" />
+        <param name="/uav0_onboard/mission_pos_z" type="double" value="1.5" />
 
     <!-- 可视化无人机 -->
     <node pkg="uav_utils" type="uav_pose_vis" name="uav_pose_vis" output="screen" >
-        <remap from="/uav0/mavros/local_position/pose" to="/uav0/mavros/local_position/pose" />
-        <remap from="/uav1/mavros/local_position/pose" to="/mavros/local_position/pose" />
+        <remap from="/uav0/mavros/" to="/uav0/mavros/" />
+        <remap from="/uav1/mavros/" to="/mavros/" />
         <remap from="/uav0/pose/visualization" to="/uav0/pose/visualization" />
         <remap from="/uav1/pose/visualization" to="/uav1/pose/visualization" />
     </node>

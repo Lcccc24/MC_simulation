@@ -19,7 +19,7 @@
       <remap from="image_rect" to="$(arg camera_name)/image_rect" />
       <remap from="camera_info" to="$(arg camera_name)/camera_info" />
 
-      <param name="publish_tag_detections_image" type="bool" value="false" />
+      <param name="publish_tag_detections_image" type="bool" value="true" />
       <param name="queue_size" type="int" value="5" />
 
       <rosparam command="load" file="$(find apriltag_ros)/config/settings.yaml"/>
@@ -28,26 +28,31 @@
 
     <!-- apriltag板位置控制 -->
     <node pkg="uav_utils" type="apriltag_pose_ctrl" name="apriltag_pose_ctrl" output="screen" >
-        <param name="target_uav_state_topic" type="string" value="/uav0/mavros/state" />
+        <param name="target_uav_state_topic" type="string" value="/AVC/mavros/state" />
         <param name="target_uav_name" type="string" value="iris0" />
         <param name="target_model_name" type="string" value="apriltag" />
     </node>
 
-    <!-- 子机视角下，apriltag板的位置真直-->
+    <!-- 子机视角下，apriltag板的位置真值-->
     <node pkg="uav_utils" type="gazebo_true" name="true_target_pose" output="screen" />
 
     <node pkg="mavros" type="mavcmd" name="mavcmd_imu_data_raw" args="long 511 105 10000 0 0 0 0 0"/>
 
+    <node pkg="mother_control" type="mother_hover" name="mother_hover" output="screen" />
+        <param name="xy_amplitude" type="double" value="0.075" />  <!-- 半径 修改XY幅度 -->
+        <param name="z_amplitude"  type="double" value="0.005" />  <!-- 修改Z幅度 -->
+        <param name="frequency"    type="double" value="0.10" />  <!-- 频率加快 -->
+
     <!-- 控制子母机飞行 -->
-    <node pkg="offboard" type="offboard_node" name="offboard_node" output="screen" />
-    <node pkg="offboard" type="offboard_node_z" name="offboard_node_z" output="screen" />
+    <!--node pkg="offboard" type="offboard_node" name="offboard_node" output="screen" />
+    <node pkg="offboard" type="offboard_node_z" name="offboard_node_z" output="screen" /-->
 
     <!-- 根据Jain等人的EKF改版的ESKF -->
-    <node pkg="vision_pose" type="landing_target_pose_node_jain" name="landing_target_pose_jain" output="screen" />
+    <!-- node pkg="vision_pose" type="landing_target_pose_node_jain" name="landing_target_pose_jain" output="screen" />
         <param name="jain/eskf/eskf_hz" type="int" value="100" />
         <param name="jain/eskf/use_imu0" type="bool" value="true" />
-        <param name="jain/eskf/gyro_var" type="double" value="0.0001" /> <!-- 0.00001 -->
-        <param name="jain/eskf/acce_var" type="double" value="0.001" /> <!-- 0.0001 -->
+        <param name="jain/eskf/gyro_var" type="double" value="0.0001" /> 
+        <param name="jain/eskf/acce_var" type="double" value="0.001" /> 
         <param name="jain/eskf/bias_gyro_var" type="double" value="0.000005" />
         <param name="jain/eskf/bias_acce_var" type="double" value="0.00005" />
         <param name="jain/eskf/bias_gyro_x" type="double" value="0.0" />
@@ -58,7 +63,7 @@
         <param name="jain/eskf/bias_acce_z" type="double" value="0.0" />
         <param name="jain/eskf/update_bias_gyro" type="bool" value="true" />
         <param name="jain/eskf/update_bias_acce" type="bool" value="true" />
-        <param name="jain/eskf/vision_xy_noise" type="double" value="0.02" /> 
+        <param name="jain/eskf/vision_xy_noise" type="double" value="0.08" /> 
         <param name="jain/eskf/vision_z_noise" type="double" value="0.04" /> 
         <param name="jain/eskf/vision_roll_pitch_noise" type="double" value="0.1" />
         <param name="jain/eskf/vision_yaw_noise" type="double" value="0.1" />
@@ -66,13 +71,13 @@
         <param name="tag/topic_name" type="string" value="/tag_detections" />
         <param name="tag/tag_frame_id" type="string" value="tag36h11" />
         <param name="tag/tag_valid_distance" type="double" value="5.0" />
-        <param name="frame/camera_frame_id" type="string" value="camera_link" />
+        <param name="frame/camera_frame_id" type="string" value="camera_link" /-->
 
     <!-- ESKF -->
     <node pkg="vision_pose" type="landing_target_pose_node" name="landing_target_pose" output="screen" />
         <param name="eskf/eskf_hz" type="int" value="100" />
         <param name="eskf/use_imu0" type="bool" value="true" />
-        <param name="eskf/gyro_var" type="double" value="0.0001" /> 
+        <param name="eskf/gyro_var" type="double" value="0.001" /> 
         <param name="eskf/acce_var" type="double" value="0.0015" /> 
         <param name="eskf/bias_gyro_var" type="double" value="0.000005" />
         <param name="eskf/bias_acce_var" type="double" value="0.00005" />
@@ -86,13 +91,30 @@
         <param name="eskf/update_bias_gyro" type="bool" value="true" />
         <param name="eskf/update_bias_acce" type="bool" value="true" />
         <param name="eskf/vision_xy_noise" type="double" value="0.02" /> 
-        <param name="eskf/vision_z_noise" type="double" value="0.04" /> 
-        <param name="eskf/vision_roll_pitch_noise" type="double" value="0.1" />
-        <param name="eskf/vision_yaw_noise" type="double" value="0.1" />
+        <param name="eskf/vision_z_noise" type="double" value="0.02" /> 
+        <param name="eskf/vision_roll_pitch_noise" type="double" value="0.01" />
+        <param name="eskf/vision_yaw_noise" type="double" value="0.01" />
         <param name="eskf/gravity" type="double" value="9.8" />
         <param name="tag/topic_name" type="string" value="/tag_detections" />
         <param name="tag/tag_frame_id" type="string" value="tag36h11" />
         <param name="tag/tag_valid_distance" type="double" value="5.0" />
         <param name="frame/camera_frame_id" type="string" value="camera_link" />
+
+
+    <!-- KF -->
+    <!-- node pkg="landing_pose" type="landing_pose" name="landing_pose" output="screen" />
+        <param name="ekf_param/ekf_hz" type="int" value="30" />
+        <param name="ekf_param/accel_noise" type="double" value="2.5" />
+        <param name="ekf_param/xy_pos_var" type="double" value="0.05" />
+        <param name="ekf_param/z_pos_var" type="double" value="0.1" />
+        <param name="ekf_param/vel_var" type="double" value="0.25" />
+        <param name="docking/tag_frame_id" type="string" value="tag36h11" />
+        <param name="docking/tag_offset_x" type="double" value="0.0" />
+        <param name="docking/tag_offset_y" type="double" value="0.0" />
+        <param name="docking/tag_offset_z" type="double" value="0.05" /> 
+        <param name="docking/tag_offset_yaw" type="double" value="1.5708" />
+        <param name="docking/tag_valid_distance" type="double" value="5.0" />
+        <param name="msg_timeout/uav_vel" type="double" value="0.5" />
+        <param name="msg_timeout/tf" type="double" value="0.5" / -->
 
 </launch>

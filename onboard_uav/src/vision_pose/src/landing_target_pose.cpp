@@ -4,13 +4,13 @@ LandingTargetPose::LandingTargetPose(ros::NodeHandle &nh) : nh_(nh) //, tf_liste
 {
     getParam();
 
-    uav_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/mavros/imu/data_raw", 1, &LandingTargetPose::ImuCallback, this);
-    uav0_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/uav0/mavros/imu/data_raw", 1, &LandingTargetPose::Imu0Callback, this);
-    uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/mavros/local_position/pose", 1, &LandingTargetPose::LocalPosCallback, this);
+    uav_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/Sub_UAV/mavros/imu/data_raw", 1, &LandingTargetPose::ImuCallback, this);
+    uav0_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/AVC/mavros/imu/data_raw", 1, &LandingTargetPose::Imu0Callback, this);
+    uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/Sub_UAV/mavros/local_position/pose", 1, &LandingTargetPose::LocalPosCallback, this);
     tag_detection_sub_ = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(tag_param_.topic_name, 1, &LandingTargetPose::TagDetectionCallback, this);
     // gazebo_true_sub_ = nh_.subscribe<gazebo_msgs::ModelStates>("/gazebo/model_states", 1, &LandingTargetPose::GazeboTrueCallback, this);
     landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_raw", 1);
-    landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose", 1);
+    landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose/ESKF", 1);
 
     eskf_timer_ = nh_.createTimer(ros::Duration(1.0 / eskf_param_.eskf_hz), &LandingTargetPose::EskfTimerCallback, this);
 
@@ -68,9 +68,11 @@ void LandingTargetPose::getParam()
     // nh_.param("frame/uav0_to_tag_q_z", frame_param_.uav0_to_tag_q.z(), 0.0);
     // nh_.param("frame/uav0_to_tag_q_w", frame_param_.uav0_to_tag_q.w(), 1.0);
     frame_param_.body_to_camera_p = Eigen::Vector3d(-0.08, 0.0, 0.0);
+    //绕z旋转90，绕x旋转180
     frame_param_.body_to_camera_q = Eigen::Quaterniond(0.0, 0.707, -0.707, 0.0);
     frame_param_.body_to_camera_q.normalize();
     frame_param_.uav0_to_tag_p = Eigen::Vector3d(0.0, 0.0, 0.1);
+    //绕z轴旋转-90度
     frame_param_.uav0_to_tag_q = Eigen::Quaterniond(0.707, 0.0, 0.0, -0.707);
     frame_param_.uav0_to_tag_q.normalize();
     frame_param_.uav0_to_landing_p = Eigen::Vector3d(0.0, 0.0, 0.1);
@@ -116,10 +118,10 @@ void LandingTargetPose::UpdateParam()
         eskf_param_temp.vision_yaw_noise != eskf_param_.vision_yaw_noise)
     {
         eskf_param_ = eskf_param_temp;
-        SetEskfParam();
-        eskf_init_flag_ = false;
+        Sskf_init_flag_ = false;
     }
-}
+}etEskfParam();
+        e
 
 void LandingTargetPose::SetEskfParam()
 {
@@ -152,6 +154,12 @@ void LandingTargetPose::Init()
     get_new_landing_target_ = false;
     get_new_landing_target_time_ = ros::Time(0);
     eskf_init_flag_ = false;
+
+    //lc add: 初始化视觉监测状态
+    last_vision_time_ = 0.0;
+    vision_timeout_ = 1.0;  // 1秒超时
+    vision_valid_ = false;
+    eskf_enabled_ = false;
 
     // eskf_param_.eskf_init = false;
 
@@ -219,10 +227,68 @@ void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetecti
             tag_pose_.pose = detection.pose.pose.pose;
             get_new_landing_target_ = true;
             get_new_landing_target_time_ = ros::Time::now();
+
+            //lc add: 标记视觉数据有效
+            last_vision_time_ = ros::Time::now().toSec();
+            vision_valid_ = true;
+        
+            //lc add: 视觉恢复时重新激活ESKF
+            if (!eskf_enabled_) {
+                ROS_INFO("Vision recovered, activating ESKF");
+                eskf_enabled_ = true;
+            }
+
             break;
         }
     }
 }
+
+// void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg)
+// {
+//     static int count;
+
+//     if (msg->detections.size() == 0)
+//     {
+//         return;
+//     }
+
+//     count++;
+
+//     if(count < 16)
+//     {
+//         for (const auto &detection : msg->detections)
+//         {
+//             if (detection.id[0] == 0 && detection.id[1] == 1)
+//             {
+//                 if (std::fabs(detection.pose.pose.pose.position.z) > tag_param_.tag_valid_distance)
+//                 {
+//                     return;
+//                 }
+//                 tag_pose_.header = detection.pose.header;
+//                 tag_pose_.pose = detection.pose.pose.pose;
+//                 get_new_landing_target_ = true;
+//                 get_new_landing_target_time_ = ros::Time::now();
+
+//                 //lc add: 标记视觉数据有效
+//                 last_vision_time_ = ros::Time::now().toSec();
+//                 vision_valid_ = true;
+            
+//                 //lc add: 视觉恢复时重新激活ESKF
+//                 if (!eskf_enabled_) {
+//                     ROS_INFO("Vision recovered, activating ESKF");
+//                     eskf_enabled_ = true;
+//                 }
+
+//                 break;
+//             }
+//         }
+//     }
+//     else{
+//         if(count > 30)
+//             count = 0;  
+//         return;
+//     }    
+// }
 
 void LandingTargetPose::GazeboTrueCallback(const gazebo_msgs::ModelStates::ConstPtr &msg)
 {
@@ -307,82 +373,95 @@ bool LandingTargetPose::IsTagPoseValid()
 
 void LandingTargetPose::EskfTimerCallback(const ros::TimerEvent &event)
 {
-    if (!imu_init_flag_)
+    // ================= 新增视觉超时检测 =================
+    const double current_time = ros::Time::now().toSec();
+    
+    // 检查视觉超时（仅在已初始化后生效）
+    if (eskf_init_flag_ && (current_time - last_vision_time_ > vision_timeout_)) 
     {
+        if (eskf_enabled_) {
+            ROS_ERROR_STREAM("[ESKF] Vision timeout! Last update: " 
+                            << current_time - last_vision_time_ << "s ago");
+            eskf_enabled_ = false;
+        }
+        vision_valid_ = false;
+    }
+
+    if (!imu_init_flag_) {
         return;
     }
 
-    // if (!imu0_init_flag_ && eskf_param_.use_imu0)
-    // {
-    //     return;
-    // }
-
-    // static int get_pose_count = 0;
-    // if (get_pose_count++ > 0.03 * eskf_param_.eskf_hz)
-    // {
-    //     // GetTagPose();
-    //     get_pose_count = 0;
-    // }
-
+    //以一定频率更新参数
     static int update_param_count = 0;
-    if (update_param_count++ > 1 * eskf_param_.eskf_hz)
-    {
+    if (update_param_count++ > 1 * eskf_param_.eskf_hz) {
         UpdateParam();
         update_param_count = 0;
     }
 
-    if (get_new_landing_target_)
-    {
+    //Apritag原始数据发布 速率取决于视觉数据更新频率 不受定时器频率影响
+    if (get_new_landing_target_) {
         CalculateLandingTargetPoseRaw();
         landing_target_pose_raw_pub_.publish(landing_target_pose_raw_);
-        // landing_target_pose_pub_.publish(tag_pose_);
+        
+        //lc add: 更新最后视觉时间戳
+        last_vision_time_ = current_time;
+        vision_valid_ = true;
     }
 
-    if (!eskf_init_flag_ && get_new_landing_target_)
-    {
-        // 重新初始化eskf
-        // // static Eigen::Vector3d p_es = Eigen::Vector3d::Zero();
-        // static Eigen::Quaterniond q_es = Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0);
-        // // p_es = Eigen::Vector3d(uav_local_pos_.pose.position.x, uav_local_pos_.pose.position.y, uav_local_pos_.pose.position.z);
-        // q_es = Eigen::Quaterniond(uav_local_pos_.pose.orientation.w, uav_local_pos_.pose.orientation.x, uav_local_pos_.pose.orientation.y, uav_local_pos_.pose.orientation.z);
-        // q_es.normalize();
-
+    // ================= ESKF初始化逻辑 =================
+    if (!eskf_init_flag_ && get_new_landing_target_) {
         eskf_.Reset();
 
+        //lc modified: 初始化时激活ESKF
+        eskf_enabled_ = true;
         get_new_landing_target_ = false;
         last_tag_pose_ = tag_pose_;
         eskf_.ObserveVision(tag_pose_);
 
-        eskf_init_time_ = ros::Time::now().toSec();
-        // eskf_last_time_ = eskf_init_time_;
+        eskf_init_time_ = current_time;
         eskf_init_flag_ = true;
+        
+        ROS_INFO("[ESKF] Initialized with first vision data");
     }
 
-    // 预测过程
-    if (eskf_init_flag_ && IsLandingTargetDetected())
-    {
-        eskf_.Predict(imu_, imu0_);
-    }
-
-    // 观测过程
-    if (get_new_landing_target_)
-    {
-        get_new_landing_target_ = false;
-        if (IsTagPoseValid())
-        {
-            eskf_.ObserveVision(tag_pose_);
+    // ================= 预测逻辑控制 =================
+    if (eskf_enabled_ && eskf_init_flag_) { 
+        try {
+            eskf_.Predict(imu_, imu0_);
+        } catch (const std::exception& e) {
+            ROS_ERROR_STREAM("ESKF prediction failed: " << e.what());
         }
     }
 
-    // 当检测到降落目标且初始化1s后发布位姿
-    if (IsLandingTargetDetected() && (ros::Time::now().toSec() - eskf_init_time_ > 1.0))
-    {
+    // ================= 观测逻辑控制 =================
+    if (get_new_landing_target_) {
+        get_new_landing_target_ = false;
+        
+        //lc modified: 仅在使能状态执行观测更新
+        if (eskf_enabled_ && IsTagPoseValid()) {
+            try {
+                eskf_.ObserveVision(tag_pose_);
+            } catch (const std::exception& e) {
+                ROS_ERROR_STREAM("ESKF observation failed: " << e.what());
+            }
+        }
+    }
+
+    // ================= 数据发布控制 =================
+    if (eskf_enabled_ && eskf_init_flag_) {
+        // 正常发布数据
         nominal_state_ = eskf_.GetNominalSE3();
-        // p_sm_R_ct_ = eskf_.GetPsmRct();
         CalculateLandingTargetPose();
         landing_target_pose_pub_.publish(landing_target_pose_);
+    } else if (eskf_init_flag_) {  // 已初始化但被禁用
+        static ros::Time last_warn_time = ros::Time(0);
+        if ((ros::Time::now() - last_warn_time).toSec() > 1.0) {
+            ROS_WARN_THROTTLE(1.0, "[ESKF] Output disabled due to vision timeout");
+            last_warn_time = ros::Time::now();
+        }
     }
 }
+
 
 bool LandingTargetPose::IsLandingTargetDetected()
 {
@@ -430,7 +509,7 @@ void LandingTargetPose::CalculateLandingTargetPose()
     p_el = p_es + (R_es * R_ms.inverse()).matrix() * (p_ml - p_ms);
     R_el = R_es * R_ms.inverse() * R_ml;
 
-    landing_target_pose_.header.stamp = tag_pose_.header.stamp;
+    landing_target_pose_.header.stamp = ros::Time::now();
     landing_target_pose_.header.frame_id = "map";
     landing_target_pose_.pose.position.x = p_el.x();
     landing_target_pose_.pose.position.y = p_el.y();
@@ -463,11 +542,13 @@ void LandingTargetPose::CalculateLandingTargetPoseRaw()
     static Sophus::SO3d R_mt = Sophus::SO3d(frame_param_.uav0_to_tag_q);
     static Sophus::SO3d R_ml = Sophus::SO3d(frame_param_.uav0_to_landing_q);
 
+    //当前位姿
     p_es = Eigen::Vector3d(uav_local_pos_.pose.position.x, uav_local_pos_.pose.position.y, uav_local_pos_.pose.position.z);
     q_es = Eigen::Quaterniond(uav_local_pos_.pose.orientation.w, uav_local_pos_.pose.orientation.x, uav_local_pos_.pose.orientation.y, uav_local_pos_.pose.orientation.z);
     q_es.normalize();
     R_es = Sophus::SO3d(q_es);
 
+    //Apritag标签位姿
     p_ct = Eigen::Vector3d(tag_pose_.pose.position.x, tag_pose_.pose.position.y, tag_pose_.pose.position.z);
 
     // p_ct.x() += 0.03 * rand() / double(RAND_MAX);
@@ -477,6 +558,20 @@ void LandingTargetPose::CalculateLandingTargetPoseRaw()
     q_ct = Eigen::Quaterniond(tag_pose_.pose.orientation.w, tag_pose_.pose.orientation.x, tag_pose_.pose.orientation.y, tag_pose_.pose.orientation.z);
     q_ct.normalize();
     R_ct = Sophus::SO3d(q_ct);
+
+    /*
+    世界坐标系 (Earth Frame)
+        ↑ R_es, p_es
+    小飞机机体坐标系 (Sub-UAV Frame)
+        ↑ R_sc, p_sc
+    相机坐标系 (Camera Frame)
+        ↑ R_ct, p_ct
+    Tag坐标系 (Tag Frame)
+        ↑ R_mt⁻¹, (p_ml - p_mt)
+    大飞机机体坐标系 (Main UAV Frame)
+        ↑ p_ml
+    降落点 (Landing Point)
+    */
 
     p_el = p_es + R_es.matrix() * (p_sc + R_sc.matrix() * (p_ct + (R_ct * R_mt.inverse()).matrix() * (p_ml - p_mt)));
     R_el = R_es * R_sc * R_ct * R_mt.inverse() * R_ml;
