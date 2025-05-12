@@ -39,9 +39,9 @@
     <node pkg="mavros" type="mavcmd" name="mavcmd_imu_data_raw" args="long 511 105 10000 0 0 0 0 0"/>
 
     <node pkg="mother_control" type="mother_hover" name="mother_hover" output="screen" />
-        <param name="xy_amplitude" type="double" value="0.075" />  <!-- 半径 修改XY幅度 -->
-        <param name="z_amplitude"  type="double" value="0.005" />  <!-- 修改Z幅度 -->
-        <param name="frequency"    type="double" value="0.10" />  <!-- 频率加快 -->
+        <param name="xy_amplitude" type="double" value="0.1" />  <!-- 半径 修改XY幅度 -->
+        <param name="z_amplitude"  type="double" value="0.1" />  <!-- 修改Z幅度 -->
+        <param name="frequency"    type="double" value="0.15" />  <!-- 频率加快 -->
 
     <!-- 控制子母机飞行 -->
     <!--node pkg="offboard" type="offboard_node" name="offboard_node" output="screen" />

@@ -97,8 +97,8 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
 
 
 
-    fsm_hz_ = 10;
-    replan_hz_ = 10;
+    fsm_hz_ = 50;
+    replan_hz_ = 2;
     fsm_timer_ = nh.createTimer(ros::Duration(1.0 / fsm_hz_), &OnboardUavFsm::UpdataFsm, this);
 
     Init();
@@ -118,7 +118,7 @@ OnboardUavFsm::~OnboardUavFsm()
 void OnboardUavFsm::Init()
 {
     onboard_uav_state_ = OnboardUavStates::IDLE;
-    docking_state_ = DockingStates::INIT;
+    docking_state_ = DockingStates::INIT;https://www.chatopens.com/
     landing_state_ = LandingStates::INIT;
     retry_state_ = RetryStates::INIT;
 
@@ -409,11 +409,14 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
     // 重规划
     static int fsm_count_replan = 0;
     static int replan_dt_count = fsm_hz_ / replan_hz_;
-    if (fsm_count_replan++ >= replan_dt_count)
+    if (fsm_count_replan >= replan_dt_count)
     {
         is_replan_ = true;
         fsm_count_replan = 0;
     }
+    else
+        fsm_count_replan++;
+    
 
     ros::Time now_time = ros::Time::now();
 
@@ -677,7 +680,7 @@ void OnboardUavFsm::RunMissionMode()
                 mother_move_pub_.publish(mother_move_msg);
             }
 
-            if(count > 25){
+            if(count > 350){
                 count = 0;
                 onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
                 //onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
@@ -703,31 +706,6 @@ void OnboardUavFsm::RunMissionMode()
             is_replan_ = false;
         }
 
-        // //lc add
-        // is_first_run_ = false;
-        // px4_choose_msg.data = 1;
-        // px4_ctl_choose_.publish(px4_choose_msg);
-        //         //px4 position control
-        // P_target.header.stamp = ros::Time::now();
-        // P_target.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
-        // P_target.type_mask =			//使用位置控制
-        // //mavros_msgs::PositionTarget::IGNORE_PX |
-        // //mavros_msgs::PositionTarget::IGNORE_PY |
-        // //mavros_msgs::PositionTarget::IGNORE_PZ |
-        // mavros_msgs::PositionTarget::IGNORE_VX |
-        // mavros_msgs::PositionTarget::IGNORE_VY |
-        // mavros_msgs::PositionTarget::IGNORE_VZ |
-        // mavros_msgs::PositionTarget::IGNORE_AFX |
-        // mavros_msgs::PositionTarget::IGNORE_AFY |
-        // mavros_msgs::PositionTarget::IGNORE_AFZ |
-        // mavros_msgs::PositionTarget::FORCE |
-        // mavros_msgs::PositionTarget::IGNORE_YAW;
-        // mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
-        // P_target.position.x = target_pos_.x();
-        // P_target.position.y = target_pos_.y();
-        // P_target.position.z = target_pos_.z();
-
-        // position_ctl_pub_.publish(P_target);
     }
 
     else
@@ -746,7 +724,8 @@ void OnboardUavFsm::Remote_Guidance()
 
     static int i = 0;
     static int hover_times = 0;
-    int mean_time = 10;
+    static int k = 0;
+    int mean_time = 50;
     ROS_INFO("RG_FLAG:%d",rg_flag);
     if(rg_flag == 1)
     {
@@ -757,7 +736,6 @@ void OnboardUavFsm::Remote_Guidance()
             return;
         }
 
-        ROS_INFO("PREVIEW POINT %d",i+1);
         // 设置航点
         target_pos_.x() = onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0] + p_set[i].x();
         target_pos_.y() = onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1] + p_set[i].y();
@@ -769,30 +747,32 @@ void OnboardUavFsm::Remote_Guidance()
 
         if ((uav_odom_pos_ - target_pos_).norm() < 0.3)
         {
-            ROS_INFO("hover");
+            ROS_INFO("PREVIEW POINT %d",i+1);
             hover_times ++;
             if(hover_times > 15)
             {
-                int k = 0;
-                while(k < mean_time)
+                if(k < mean_time)
                 {
                     k++;
                     pre_uwb_d[i] += uwb_distance;
                     pre_vio_p[i].x() += uav_odom_pos_.x() - (onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0]);
                     pre_vio_p[i].y() += uav_odom_pos_.y() - (onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1]);
                     pre_vio_p[i].z() += uav_odom_pos_.z() - (onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2]);
-                    ROS_INFO("PRE_UWB_i%d : %f",i+1,pre_uwb_d[i]/k);
-                    ROS_INFO("PRE_VIO_i%d : %f,%f,%f",i+1,pre_vio_p[i].x()/k,pre_vio_p[i].y()/k,pre_vio_p[i].z()/k);
-                    ros::spinOnce();
-                    ros::Duration(0.05).sleep(); // 添加延迟模拟合理采样间隔
+                    //ROS_INFO("PRE_UWB_i%d : %f",i+1,pre_uwb_d[i]/k);
+                    //ROS_INFO("PRE_VIO_i%d : %f,%f,%f",i+1,pre_vio_p[i].x()/k,pre_vio_p[i].y()/k,pre_vio_p[i].z()/k);
+                    // ros::spinOnce();
+                    // ros::Duration(0.05).sleep(); // 添加延迟模拟合理采样间隔
                 }
 
-                pre_uwb_d[i] = pre_uwb_d[i] / mean_time;
-                pre_vio_p[i] = pre_vio_p[i] / mean_time;
-                ROS_INFO("PRE_UWB_%d : %f",i+1,pre_uwb_d[i]);
-                ROS_INFO("PRE_VIO_%d : %f,%f,%f",i+1,pre_vio_p[i].x(),pre_vio_p[i].y(),pre_vio_p[i].z());
-                i++;
-                hover_times = 0;
+                else{
+                    pre_uwb_d[i] = pre_uwb_d[i] / mean_time;
+                    pre_vio_p[i] = pre_vio_p[i] / mean_time;
+                    ROS_INFO("PRE_UWB_%d : %f",i+1,pre_uwb_d[i]);
+                    ROS_INFO("PRE_VIO_%d : %f,%f,%f",i+1,pre_vio_p[i].x(),pre_vio_p[i].y(),pre_vio_p[i].z());
+                    i++;
+                    k = 0;
+                    hover_times = 0;
+                }
             }
 
             if(i == 4)
@@ -800,34 +780,13 @@ void OnboardUavFsm::Remote_Guidance()
         }
 
         //规划器--px4ctl接口
-        PlanTrajectory();
+        if(PlanTrajectory());
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
 
-
-        //         //lc add
-        // px4_choose_msg.data = 1;
-        // px4_ctl_choose_.publish(px4_choose_msg);
-        //         //px4 position control
-        // P_target.header.stamp = ros::Time::now();
-        // P_target.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
-        // P_target.type_mask =			//使用位置控制
-        // //mavros_msgs::PositionTarget::IGNORE_PX |
-        // //mavros_msgs::PositionTarget::IGNORE_PY |
-        // //mavros_msgs::PositionTarget::IGNORE_PZ |
-        // mavros_msgs::PositionTarget::IGNORE_VX |
-        // mavros_msgs::PositionTarget::IGNORE_VY |
-        // mavros_msgs::PositionTarget::IGNORE_VZ |
-        // mavros_msgs::PositionTarget::IGNORE_AFX |
-        // mavros_msgs::PositionTarget::IGNORE_AFY |
-        // mavros_msgs::PositionTarget::IGNORE_AFZ |
-        // mavros_msgs::PositionTarget::FORCE |
-        // mavros_msgs::PositionTarget::IGNORE_YAW;
-        // mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
-        // P_target.position.x = target_pos_.x();
-        // P_target.position.y = target_pos_.y();
-        // P_target.position.z = target_pos_.z();
-
-        // position_ctl_pub_.publish(P_target);
-        
     }
 
 
@@ -849,33 +808,12 @@ void OnboardUavFsm::Remote_Guidance()
         else
             rg_flag = 3;
 
-        PlanTrajectory();
-
-
-        //                 //lc add
-        // px4_choose_msg.data = 1;
-        // px4_ctl_choose_.publish(px4_choose_msg);
-        //         //px4 position control
-        // P_target.header.stamp = ros::Time::now();
-        // P_target.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
-        // P_target.type_mask =			//使用位置控制
-        // //mavros_msgs::PositionTarget::IGNORE_PX |
-        // //mavros_msgs::PositionTarget::IGNORE_PY |
-        // //mavros_msgs::PositionTarget::IGNORE_PZ |
-        // mavros_msgs::PositionTarget::IGNORE_VX |
-        // mavros_msgs::PositionTarget::IGNORE_VY |
-        // mavros_msgs::PositionTarget::IGNORE_VZ |
-        // mavros_msgs::PositionTarget::IGNORE_AFX |
-        // mavros_msgs::PositionTarget::IGNORE_AFY |
-        // mavros_msgs::PositionTarget::IGNORE_AFZ |
-        // mavros_msgs::PositionTarget::FORCE |
-        // mavros_msgs::PositionTarget::IGNORE_YAW;
-        // mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
-        // P_target.position.x = target_pos_.x();
-        // P_target.position.y = target_pos_.y();
-        // P_target.position.z = target_pos_.z();
-
-        // position_ctl_pub_.publish(P_target);
+        if(PlanTrajectory());
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
         
     }
 
@@ -895,15 +833,22 @@ void OnboardUavFsm::Remote_Guidance()
             onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
             onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
             PubOnboardMsg();
-            PlanTrajectory();
-            px4_choose_msg.data = 0;
-            px4_ctl_choose_.publish(px4_choose_msg);
+            // PlanTrajectory();
+            // px4_choose_msg.data = 0;
+            // px4_ctl_choose_.publish(px4_choose_msg);
             ROS_INFO("REMOTE GUIDANCE COMPLETE"); 
             return;
         }
         
         //px4 position control
-        Pub_px4_cmd(ite_est_p.x(), ite_est_p.y(), ite_est_p.z());
+        //Pub_px4_cmd(ite_est_p.x(), ite_est_p.y(), ite_est_p.z());
+        if(PlanTrajectory());
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
+
     }
 
 
@@ -1126,8 +1071,7 @@ void OnboardUavFsm::RunDockingReturn()
     if ((OnboardMsgIsReceived(ros::Time::now()) && IsOnboardCommand(quadrotor_msgs::Onboard::ALLOW_PRECISION_LANDING)) || is_docking_retry_)
     // if (IsOnboardCommand(quadrotor_msgs::Onboard::ALLOW_PRECISION_LANDING))
     {
-        px4_choose_msg.data = 0;
-        px4_ctl_choose_.publish(px4_choose_msg);
+
         if (LandingTargetPoseIsReceived(ros::Time::now()))
         {
             is_first_run_ = true;
@@ -1222,7 +1166,7 @@ void OnboardUavFsm::RunDockingLanding()
     relative_pos.y() = landing_target_pose_.pose.position.y - uav_odom_pos_.y();
     relative_pos.z() = landing_target_pose_.pose.position.z - uav_odom_pos_.z();
     
-    ROS_INFO("relative_pos:%f,%f,%f",relative_pos.x(),relative_pos.y(),relative_pos.z());
+    //ROS_INFO("relative_pos:%f,%f,%f",relative_pos.x(),relative_pos.y(),relative_pos.z());
     // landing_target_pose_lock_.clear(std::memory_order_release);
     // horizontal_distance = std::sqrt(relative_pos.x() * relative_pos.x() + relative_pos.y() * relative_pos.y());
     horizontal_distance = relative_pos.head(2).norm();
@@ -1284,15 +1228,16 @@ void OnboardUavFsm::RunDockingLanding()
         target_q_.w() = landing_target_pose_.pose.orientation.w;
 
         // 调用规划器，规划在目标上方下降轨迹
-        // if (PlanTrajectory())
-        // {
-        //     is_replan_ = false;
-        //     // 打印目标位姿
-        //     // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        // }
+        ROS_INFO("des:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
+        if(PlanTrajectory());
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
 
         //lc change
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
+        //Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
         
 
         break;
@@ -1330,15 +1275,16 @@ void OnboardUavFsm::RunDockingLanding()
         target_q_.w() = landing_target_pose_.pose.orientation.w;
 
         // 调用规划器，规划在目标上方下降轨迹
-        // if (PlanTrajectory())
-        // {
-        //     is_replan_ = false;
-        //     // 打印目标位姿
-        //     // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        // }
+        ROS_INFO("re:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
+        if (PlanTrajectory())
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
 
         //lc change
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
+        //Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
         
 
         break;
@@ -1411,7 +1357,14 @@ void OnboardUavFsm::RunDockingLanding()
             ROS_INFO("LOSE TARGET--- DANGER");
         }
 
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
+        ROS_INFO("fin:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
+        if(PlanTrajectory());
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
+        //Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
 
         break;
     }
@@ -1487,7 +1440,13 @@ void OnboardUavFsm::RunDockingRetry()
         }
 
         target_pos_ = uav_odom_pos_;
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
+        //Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
+        if(PlanTrajectory());
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
         ROS_INFO("DOCKING_RETRY: Hover");
   
 
@@ -1533,14 +1492,14 @@ void OnboardUavFsm::RunDockingRetry()
             break;
         }
 
-        Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
+        //Pub_px4_cmd(target_pos_.x(),target_pos_.y(),target_pos_.z());
         // 爬升到指定位置
-        // if (PlanTrajectory())
-        // {
-        //     is_replan_ = false;
-        //     // 打印目标位姿
-        //     // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        // }
+        if (PlanTrajectory())
+        {
+            is_replan_ = false;
+            // 打印目标位姿
+            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+        }
         break;
     }
     }
@@ -1556,7 +1515,7 @@ bool OnboardUavFsm::PlanTrajectory()
 
     Eigen::MatrixXd start_state(3, 4);
     start_state.setZero();
-    ros::Time replan_start_time = ros::Time::now() + ros::Duration(0.03); // 0.03s
+    ros::Time replan_start_time = ros::Time::now(); // + ros::Duration(0.03)
     double replan_time = (replan_start_time - replan_start_time_).toSec();
     if (is_first_run_ || replan_time > poly_traj_.getTotalDuration())
     {
@@ -1600,8 +1559,13 @@ bool OnboardUavFsm::PlanTrajectory()
         replan_start_time_ = replan_start_time;
         //PubTrajectory函数将经过优化器优化后的轨迹poly_traj_发布
         PubTrajectory(replan_start_time_);
-        vis_ptr_->visualize_traj(poly_traj_, "onboard_uav_trajectory");
 
+        //lc add
+        traj_opt_ptr_->trans_bvp_traj(bvp_traj_);
+        vis_ptr_->visualize_traj(bvp_traj_, "bvp_trajectory"); 
+
+        vis_ptr_->visualize_traj(poly_traj_, "onboard_uav_trajectory");
+    
         if (docking_state_ == DockingStates::LANDING)
         // if(landing_state_ == LandingStates::DESCEND_ABOVE_TARGET)
         {

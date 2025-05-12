@@ -59,8 +59,9 @@ void publish_cmd(int traj_id,
 }
 
 bool exe_traj(const quadrotor_msgs::PolyTraj &trajMsg)
-{
+{   
     double t = (ros::Time::now() - trajMsg.start_time).toSec();
+    ROS_WARN("Time: %.2f",t);
     if (t > 0)
     {
         if (trajMsg.hover)
@@ -104,6 +105,7 @@ bool exe_traj(const quadrotor_msgs::PolyTraj &trajMsg)
             dura[i] = trajMsg.duration[i];
         }
         Trajectory traj(dura, cMats);
+
         if (t > traj.getTotalDuration())
         {
             receive_traj_ = false;
@@ -115,6 +117,10 @@ bool exe_traj(const quadrotor_msgs::PolyTraj &trajMsg)
         p = traj.getPos(t);
         v = traj.getVel(t);
         a = traj.getAcc(t);
+        ROS_WARN("T,ID,%.2f,%d", t, trajMsg.traj_id);
+        ROS_WARN("P,%.2f,%.2f,%.2f", p.x(), p.y(), p.z());
+        // ROS_WARN("V,%.2f,%.2f,%.2f", v.x(), v.y(), v.z());
+
         // NOTE yaw
         double yaw = trajMsg.yaw;
         double d_yaw = yaw - last_yaw_;
@@ -127,6 +133,14 @@ bool exe_traj(const quadrotor_msgs::PolyTraj &trajMsg)
         }
         publish_cmd(trajMsg.traj_id, p, v, a, yaw, 0); // TODO yaw
         last_yaw_ = yaw;
+        
+        for(int i = 1; i <= 5; i++){
+            float tl = traj.getTotalDuration() / 5 * i;
+            p = traj.getPos(tl);
+            ROS_ERROR("Tl,IDl,%.2f,%d", tl, i);
+            ROS_ERROR("Pl,%.2f,%.2f,%.2f", p.x(), p.y(), p.z());
+        }
+
         return true;
     }
     return false;
@@ -139,6 +153,7 @@ void heartbeatCallback(const std_msgs::EmptyConstPtr &msg)
 
 void polyTrajCallback(const quadrotor_msgs::PolyTrajConstPtr &msgPtr)
 {
+    ROS_INFO("REC TRAJ");
     trajMsg_ = *msgPtr;
     if (!receive_traj_)
     {
@@ -148,7 +163,9 @@ void polyTrajCallback(const quadrotor_msgs::PolyTrajConstPtr &msgPtr)
 }
 
 void cmdCallback(const ros::TimerEvent &e)
-{
+{   
+    static int count = 0;
+
     if (!receive_traj_)
     {
         return;
@@ -160,6 +177,10 @@ void cmdCallback(const ros::TimerEvent &e)
         publish_cmd(trajMsg_.traj_id, last_p_, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), 0, 0); // TODO yaw
         return;
     }
+    count ++;
+    if(count > 10000)
+        count = 0;
+    ROS_ERROR("count t, %d,%d", count, trajMsg_.traj_id);
     if (exe_traj(trajMsg_))
     {
         trajMsg_last_ = trajMsg_;
@@ -167,6 +188,7 @@ void cmdCallback(const ros::TimerEvent &e)
     }
     else if (exe_traj(trajMsg_last_))
     {
+        ROS_ERROR("exe last traj");
         return;
     }
 }
@@ -176,7 +198,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "traj_server");
     ros::NodeHandle nh("~");
 
-    ros::Subscriber poly_traj_sub = nh.subscribe("/trajectory", 10, polyTrajCallback);
+    ros::Subscriber poly_traj_sub = nh.subscribe("/trajectory", 1, polyTrajCallback);
     ros::Subscriber heartbeat_sub = nh.subscribe("/heartbeat", 10, heartbeatCallback);
 
     pos_cmd_pub_ = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);

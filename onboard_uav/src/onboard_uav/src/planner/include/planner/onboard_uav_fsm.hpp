@@ -113,6 +113,7 @@ private:
     Eigen::Quaterniond target_q_;             // 目标姿态
 
     Trajectory poly_traj_; // 多项式轨迹
+    Trajectory bvp_traj_;
     int traj_id_;          // 轨迹id
 
     // 规划轨迹
@@ -227,7 +228,7 @@ private:
     ros::Timer fsm_timer_; // 定时器
     void UpdataFsm(const ros::TimerEvent &event);
     // 用 fsm_hz_ 控制状态机更新频率
-    int fsm_hz_;        // 状态机更新LandingPose频率
+    int fsm_hz_;        // 状态机更新频率
     int replan_hz_;     // 重新规划频率
     bool is_replan_;    // 是否重新规划
     bool is_first_run_; // 是否第一次运行该状态
@@ -260,7 +261,7 @@ private:
     
 
     //对接点相对母机的位置
-    Eigen::Vector3d dock_r2m = {0.2,0,1.5};
+    Eigen::Vector3d dock_r2m = {0.0,0,1.5};
     //几何法子机相对于对接点的估计位置
     Eigen::Vector3d geo_est_c2d = Eigen::Vector3d::Zero();
     Eigen::Vector3d ite_c2d_q = Eigen::Vector3d::Zero();
@@ -270,8 +271,8 @@ private:
     float geo_p_weight = 0.8;
     //uwb测量四点距离
     double pre_uwb_d[4] = {0,0,0,0};
-    float d_stopite = 0.25;
-    float d_change = 2.5;
+    float d_stopite = 0.20;
+    float d_change = 2.0;
 
     //远程引导标志位
     int rg_flag = 0;

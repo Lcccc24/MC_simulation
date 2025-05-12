@@ -118,10 +118,9 @@ void LandingTargetPose::UpdateParam()
         eskf_param_temp.vision_yaw_noise != eskf_param_.vision_yaw_noise)
     {
         eskf_param_ = eskf_param_temp;
-        Sskf_init_flag_ = false;
+        eskf_init_flag_ = false;
     }
-}etEskfParam();
-        e
+}
 
 void LandingTargetPose::SetEskfParam()
 {

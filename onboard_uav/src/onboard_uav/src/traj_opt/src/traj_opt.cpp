@@ -11,6 +11,7 @@ namespace traj_opt
   static Eigen::Vector3d land_v_;
   static Eigen::Vector3d v_t_x_, v_t_y_;
   static Trajectory init_traj_;
+  static Trajectory bvp_traj;
   static double init_tail_f_;
   static Eigen::Vector2d init_vt_;
   static bool initial_guess_ = false;
@@ -372,9 +373,9 @@ namespace traj_opt
     {
       // 额外z轴速度
       v_plus_ = 0.00;
-      vmax_ = 0.3;//0.15
+      vmax_ = 0.5;//0.15
       amax_ = 0.5;//2.0
-      omega_max_ = 1.5;//3.0
+      omega_max_ = 2.5;//3.0
       rhoV_ = 1000.0;
       rhoT_ = 10000.0;
     }
@@ -388,6 +389,16 @@ namespace traj_opt
       rhoT_ = 100000.0;
     }
   }
+
+
+  
+  bool TrajOpt::trans_bvp_traj(Trajectory &traj)
+  {
+    traj = bvp_traj;
+    return true;
+  }
+
+
   /*
   iniState: 初始状态 包含位置速度等信息
   car_p: 目标位置
@@ -397,8 +408,6 @@ namespace traj_opt
   t_replan: 重规划时间 t_replan默认为-1时，不进行重规划
   traj: 轨迹对象，用于存储生成的轨迹信息
   */
-
-
   bool TrajOpt::generate_traj(const Eigen::MatrixXd &iniState,
                               const Eigen::Vector3d &car_p,
                               const Eigen::Vector3d &car_v,
@@ -522,8 +531,11 @@ namespace traj_opt
         std::vector<CoefficientMat> coeffs{coeffMat};
         Trajectory traj(durs, coeffs);
         max_omega = getMaxOmega(traj);
+
+        bvp_traj = traj;
       } while (max_omega > 1.5 * omega_max_);
       //创建一个 8 维向量 tt，并将最后一个元素设为 1.0
+
       Eigen::VectorXd tt(8);
       //tt(7)为t零次方=1 倒序填充
       tt(7) = 1.0;
@@ -704,15 +716,15 @@ namespace traj_opt
         grad_tmp3.setZero();
         cost_inner = 0.0;
 
-        // if (grad_cost_floor(pos, grad_tmp, cost_tmp))
-        // {
-        //   grad_p += grad_tmp;
-        //   cost_inner += cost_tmp;
-        //   // if (is_landing_ && cost_tmp > 0.1)
-        //   // {
-        //   //   std::cout << "floor cost: " << cost_tmp << std::endl;
-        //   // }
-        // }
+        if (grad_cost_floor(pos, grad_tmp, cost_tmp))
+        {
+          grad_p += grad_tmp;
+          cost_inner += cost_tmp;
+          // if (is_landing_ && cost_tmp > 0.1)
+          // {
+          //   std::cout << "floor cost: " << cost_tmp << std::endl;
+          // }
+        }
 
         if (grad_cost_v(vel, grad_tmp, cost_tmp))
         {
@@ -745,16 +757,16 @@ namespace traj_opt
           }
         }
 
-        // if (grad_cost_omega_yaw(acc, jer, grad_tmp, grad_tmp2, cost_tmp))
-        // {
-        //   grad_a += grad_tmp;
-        //   grad_j += grad_tmp2;
-        //   cost_inner += cost_tmp;
-        //   if(is_landing_ && cost_tmp > 0.1)
-        //   {
-        //     std::cout << "yaw cost: " << cost_tmp << std::endl;
-        //   }
-        // }
+        if (grad_cost_omega_yaw(acc, jer, grad_tmp, grad_tmp2, cost_tmp))
+        {
+          grad_a += grad_tmp;
+          grad_j += grad_tmp2;
+          cost_inner += cost_tmp;
+          if(is_landing_ && cost_tmp > 0.1)
+          {
+            std::cout << "yaw cost: " << cost_tmp << std::endl;
+          }
+        }
 
         double dur2now = (i + alpha) * mincoOpt_.t(1);
         Eigen::Vector3d car_p = car_p_ + car_v_ * dur2now;

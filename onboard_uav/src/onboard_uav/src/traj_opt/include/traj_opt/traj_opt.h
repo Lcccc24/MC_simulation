@@ -56,6 +56,9 @@ namespace traj_opt
                            Trajectory &traj,
                            const double &t_replan = -1.0);
 
+        //lc add
+        bool trans_bvp_traj(Trajectory &traj);
+
         bool feasibleCheck(Trajectory &traj);
 
         void addTimeIntPenalty(double &cost);
