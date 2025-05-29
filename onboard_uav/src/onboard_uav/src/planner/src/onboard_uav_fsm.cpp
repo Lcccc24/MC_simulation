@@ -1,28 +1,5 @@
 #include "planner/onboard_uav_fsm.hpp"
 
-// Header header
-// uint8 uav_id # 本机ID
-// uint8 target_uav_id # 目标无人机ID
-// uint8 flight_command # 母机飞行指令：0-无指令 1-起飞 2-任务 3-对接 4-降落
-// uint8 flight_status # 子机飞行状态：10-起飞完成 20-任务完成 40-降落完成 40-返航完成 50-精准降落完成
-// geometry_msgs/Point position # 位置： 任务点 返航点
-
-// # 母机飞行指令
-// uint8 IDLE = 0 # 待机
-// uint8 TAKEOFF =1 # 起飞
-// uint8 MISSION = 2 # 执行任务
-// uint8 DOCKING = 3 # 对接
-// uint8 LAND = 4 # 降落
-// uint8 ALLOW_RETURN = 5 # 允许返航
-// uint8 ALLOW_PRECISION_LANDING = 6 # 允许精准降落
-
-// # 子机飞行状态
-// uint8 TAKEOFF_COMPLETE = 10 # 起飞完成
-// uint8 MISSION_COMPLETE = 20 # 任务完成
-// uint8 LAND_COMPLETE = 30 # 降落完成
-// uint8 RETURN_COMPLETE = 40 # 返航完成
-// uint8 PRECISION_LANDING_COMPLETE = 50 # 精准降落完成
-
 /**
  * @brief 构造函数
  * @param nh ROS 节点句柄
@@ -487,7 +464,7 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
         // 起飞完成后发送 Onboard::TAKEOFF_COMPLETE ，等待下一步指令
         if (uav_odom_pos_.z() >= onboard_uav_param_.real_takeoff_height - 0.3)
         {
-            onboard_published_.flight_command = quadrotor_msgs::Onboard::TAKEOFF;
+            //onboard_published_.flight_command = quadrotor_msgs::Onboard::TAKEOFF;
             onboard_published_.flight_status = quadrotor_msgs::Onboard::TAKEOFF_COMPLETE;
             PubOnboardMsg();
             // 发布悬停
@@ -519,16 +496,11 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
             break;
         }
 
-        // 出现故障时，进入故障保护状态
-        // 此处状态切换有点乱 后续需要修改
-        // 当接收到母机的对接指令时，进入对接状态
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
+        // 当接收到母机的远程引导指令时，进入引导返回状态
+        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::REMOTE_GUIDE))
         {
-            hover_flag_ = false;
-            // is_first_run_ = true;
-            docking_state_ = DockingStates::INIT;
-            onboard_uav_state_ = OnboardUavStates::DOCKING;
-            ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
+            onboard_uav_state_ = OnboardUavStates::REMOTE_GUIDE;
+            ROS_INFO("\033[32mMISSION: Switch to REMOTE_GUIDANCE\033[0m");
             break;
         }
         // 当接收到母机的降落指令时，进入降落状态
@@ -546,11 +518,16 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
 
     case OnboardUavStates::REMOTE_GUIDE:
     {
-        // 当接收到母机的对接指令时，进入对接状态
+        // 当接收到母机的盘旋指令时，进入盘旋状态
+        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::SEARCH))
+        {
+            onboard_uav_state_ = OnboardUavStates::SEARCH;
+            ROS_INFO("\033[32mMISSION: Switch to SEARCH\033[0m");
+            break;
+        }
+        // 当接收到母机的盘旋指令时，进入盘旋状态
         if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
         {
-            hover_flag_ = false;
-            // is_first_run_ = true;
             docking_state_ = DockingStates::INIT;
             onboard_uav_state_ = OnboardUavStates::DOCKING;
             ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
@@ -565,6 +542,27 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
         }
 
         Remote_Guidance();
+        break;
+    }
+
+    case OnboardUavStates::SEARCH:
+    {
+        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
+        {
+            docking_state_ = DockingStates::INIT;
+            onboard_uav_state_ = OnboardUavStates::DOCKING;
+            ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
+            break;
+        }
+        // 当接收到母机的降落指令时，进入降落状态
+        else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
+        {
+            onboard_uav_state_ = OnboardUavStates::LAND;
+            ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
+            break;
+        }
+
+        Run_Search();
         break;
     }
 
@@ -615,7 +613,7 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
         // 降落完成后发送 Onboard::LAND_COMPLETE
         if (!uav_state_.armed)
         {
-            onboard_published_.flight_command = quadrotor_msgs::Onboard::LAND;
+            //onboard_published_.flight_command = quadrotor_msgs::Onboard::LAND;
             onboard_published_.flight_status = quadrotor_msgs::Onboard::LAND_COMPLETE;
             PubOnboardMsg();
             onboard_uav_state_ = OnboardUavStates::IDLE; // TODO bug
@@ -682,20 +680,10 @@ void OnboardUavFsm::RunMissionMode()
 
             if(count > 350){
                 count = 0;
-                onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
-                //onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
+                //onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
+                onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
                 PubOnboardMsg();
                 rg_flag = 1;
-                // 发布悬停
-                // if (!hover_flag_)
-                // {
-                //     // target_pos_ = uav_odom_pos_;
-                //     hover_flag_ = true;
-                //     // PubHoverPos();
-                //     ROS_INFO("MISSION COMPLETE: Hover"); // TODO 有bug，会一直打印
-                //执行完任务后进入远程引导
-                onboard_uav_state_= OnboardUavStates::REMOTE_GUIDE;
-                // }
                 return;
             }
         }
@@ -830,8 +818,8 @@ void OnboardUavFsm::Remote_Guidance()
         if((ite_c2d_q - dock_r2m).norm() < d_stopite && ite_k > 50)
         //if((uav_odom_pos_ - geo_est_c2d - dock_r2m).norm() < d_stopite && ite_k > 10)
         {
-            onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
-            onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
+            //onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
+            onboard_published_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
             PubOnboardMsg();
             // PlanTrajectory();
             // px4_choose_msg.data = 0;
@@ -963,6 +951,62 @@ void OnboardUavFsm::iterate_estimate()
 }
 
 
+bool OnboardUavFsm::Circle_Search() {
+    static bool detect = false, cir_done = false;
+    static Eigen::Vector3d cir_center = uav_odom_pos_;
+    static float cir_radius = 0.5;
+    const double omega = 2 * M_PI / 5;  // 角速度（弧度/秒） 5秒完成一圈
+    const double T = 2.0 * M_PI / omega;  // 完成一圈的时间
+    static auto start_time = ros::Time::now().toSec();  // 初始时间
+    float t = ros::Time::now().toSec() - start_time;  // 当前时间
+
+    // 更新目标位置（根据圆形轨迹）
+    target_pos_ << cir_center[0] + cir_radius * cos(t * omega), 
+                   cir_center[1] + cir_radius * sin(t * omega), 
+                   cir_center[2];
+
+    PlanTrajectory();
+
+    // 如果接收到着陆目标位置
+    if (LandingTargetPoseIsReceived(ros::Time::now())) {
+        circle_search_target.x() = landing_target_pose_.pose.position.x;
+        circle_search_target.y() = landing_target_pose_.pose.position.y;
+        detect = true;
+    }
+
+    // 判断是否完成一圈圆形轨迹
+    if (t >= T) {
+        cir_done = true;
+        cir_radius += 0.5;  // 可以根据需要调整半径增加的步长
+        start_time = ros::Time::now().toSec();  // 重置开始时间
+    }
+
+    //ROS_INFO("detect, cir_done: %d, %d", detect, cir_done);
+
+    // 返回是否完成了圆形轨迹并且成功检测到着陆目标
+    return (detect && cir_done);
+}
+
+void OnboardUavFsm::Run_Search(){
+
+    if(!search_flag){
+        bool find_tag = Circle_Search();
+        if(find_tag){
+            search_flag = true;
+        }
+        else{
+            ROS_INFO("CIRCIE SEARCHING");
+        }
+    }
+
+    else{
+        onboard_published_.flight_status = quadrotor_msgs::Onboard::SEARCH_COMPLETE;
+        PubOnboardMsg();
+        ROS_INFO("SEARCH COMPLETE");
+        search_flag = false;
+    }
+}
+
 /**
  * @brief 对接状态机
  */
@@ -1027,8 +1071,8 @@ void OnboardUavFsm::RunDockingIdle()
     }
     else
     {
-        onboard_published_.flight_command = quadrotor_msgs::Onboard::DOCKING;
-        onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
+        //onboard_published_.flight_command = quadrotor_msgs::Onboard::DOCKING;
+        onboard_published_.flight_status = quadrotor_msgs::Onboard::SEARCH_COMPLETE;
         PubOnboardMsg();
         // 发布悬停
         if (!hover_flag_)
@@ -1051,18 +1095,13 @@ void OnboardUavFsm::RunDockingReturn()
     // 设置返航目标点
     if (is_first_run_ && !is_docking_retry_)
     {
-        // while (onboard_msg_lock_.test_and_set(std::memory_order_acquire))
-        //     ;
 
-        //lc change
-        target_pos_ = ite_est_p;
-
-        // onboard_msg_lock_.clear(std::memory_order_release);
+        target_pos_.x() = circle_search_target.x();
+        target_pos_.y() = circle_search_target.y();
+        target_pos_.z() = ite_est_p.z();
         target_vel_ = Eigen::Vector3d::Zero();
         target_q_ = Eigen::Quaterniond::Identity();
-        //ROS_INFO("111");
-        // DEBUG 打印目标位姿
-        //PrintUAVPosVel();
+
     }
 
     // 当接收到母机的降落指令，且标签可见时，进入降落状态，
@@ -1084,7 +1123,9 @@ void OnboardUavFsm::RunDockingReturn()
             // 当接收到母机的降落指令，但标签不可见时，返航至新的指定位置
             is_replan_ = true;
             //lc change
-            target_pos_ = ite_est_p;
+            target_pos_.x() = circle_search_target.x();
+            target_pos_.y() = circle_search_target.y();
+            target_pos_.z() = ite_est_p.z();
             target_vel_ = Eigen::Vector3d::Zero();
             target_q_ = Eigen::Quaterniond::Identity();
             ROS_INFO("Receive Down Cmd, But cannot find tag");
@@ -1115,9 +1156,9 @@ void OnboardUavFsm::RunDockingReturn()
     }
 
     // 当到达指定返航位置时，发送 Onboard::RETURN_COMPLETE，等待下一步指令
-    if ((uav_odom_pos_ - target_pos_).norm() < 0.4)
+    if ((uav_odom_pos_ - target_pos_).norm() < 0.15)
     {
-        onboard_published_.flight_command = quadrotor_msgs::Onboard::DOCKING;
+        //onboard_published_.flight_command = quadrotor_msgs::Onboard::DOCKING;
         onboard_published_.flight_status = quadrotor_msgs::Onboard::RETURN_COMPLETE;
         PubOnboardMsg();
 
@@ -1376,8 +1417,8 @@ void OnboardUavFsm::RunDockingLanding()
 void OnboardUavFsm::RunDockingComplete()
 {
     // 发送 Onboard::LAND_COMPLETE
-    onboard_published_.flight_command = quadrotor_msgs::Onboard::DOCKING;
-    onboard_published_.flight_status = quadrotor_msgs::Onboard::LAND_COMPLETE;
+    //onboard_published_.flight_command = quadrotor_msgs::Onboard::DOCKING;
+    onboard_published_.flight_status = quadrotor_msgs::Onboard::PRECISION_LANDING_COMPLETE;
     PubOnboardMsg();
 
     // TODO 发送信号给traj_server，让其停止发布，停止发布心跳包
@@ -1774,6 +1815,9 @@ void OnboardUavFsm::Pub_FSM_State()
     case OnboardUavStates::REMOTE_GUIDE:
         fsm_state_.fsm_state_s = "REMOTE_GUIDE";
         break;
+    case OnboardUavStates::SEARCH:
+        fsm_state_.fsm_state_s = "SEARCH";
+        break;
     case OnboardUavStates::DOCKING:
         fsm_state_.fsm_state_s = "DOCKING";
         break;
@@ -1935,3 +1979,4 @@ void OnboardUavFsm::PrintUAVPosVel()
         std::cout << std::fixed << std::setprecision(2) << "vel: " << target_vel_.transpose() << std::endl;
     }
 }
+

@@ -69,14 +69,14 @@ private:
     frame_param frame_param_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_imu_sub_, uav0_imu_sub_, uav_local_pos_sub_ , tag_detection_sub_ , gazebo_true_sub_;
+    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_ , tag_detection_sub_ , gazebo_true_sub_;
     ros::Publisher landing_target_pose_raw_pub_, landing_target_pose_pub_;
     geometry_msgs::TransformStamped camera_to_tag_tf_;
     //tf2_ros::Buffer tf_buffer_;
     //tf2_ros::TransformListener tf_listener_;
 
     void ImuCallback(const sensor_msgs::Imu::ConstPtr &msg);
-    void Imu0Callback(const sensor_msgs::Imu::ConstPtr &msg);
+    //void Imu0Callback(const sensor_msgs::Imu::ConstPtr &msg);
     void LocalPosCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg);
     void GazeboTrueCallback(const gazebo_msgs::ModelStates::ConstPtr &msg);
@@ -93,7 +93,7 @@ private:
     void SetEskfParam();
 
     sensor_msgs::Imu imu_;
-    sensor_msgs::Imu imu0_;
+    //sensor_msgs::Imu imu0_;
     geometry_msgs::PoseStamped tag_pose_, last_tag_pose_;
     geometry_msgs::PoseStamped uav_local_pos_;
 
@@ -109,7 +109,7 @@ private:
     double tf_timeout_;
 
     bool imu_init_flag_;
-    bool imu0_init_flag_;
+    // bool imu0_init_flag_;
     // bool tf_init_flag_;
     bool get_new_landing_target_;
 

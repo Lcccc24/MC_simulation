@@ -5,7 +5,7 @@ LandingTargetPose::LandingTargetPose(ros::NodeHandle &nh) : nh_(nh) //, tf_liste
     getParam();
 
     uav_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/Sub_UAV/mavros/imu/data_raw", 1, &LandingTargetPose::ImuCallback, this);
-    uav0_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/AVC/mavros/imu/data_raw", 1, &LandingTargetPose::Imu0Callback, this);
+    //uav0_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/AVC/mavros/imu/data_raw", 1, &LandingTargetPose::Imu0Callback, this);
     uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/Sub_UAV/mavros/local_position/pose", 1, &LandingTargetPose::LocalPosCallback, this);
     tag_detection_sub_ = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(tag_param_.topic_name, 1, &LandingTargetPose::TagDetectionCallback, this);
     // gazebo_true_sub_ = nh_.subscribe<gazebo_msgs::ModelStates>("/gazebo/model_states", 1, &LandingTargetPose::GazeboTrueCallback, this);
@@ -130,7 +130,7 @@ void LandingTargetPose::SetEskfParam()
     options.acce_var_ = eskf_param_.acce_var;
     options.bias_gyro_var_ = eskf_param_.bias_gyro_var;
     options.bias_acce_var_ = eskf_param_.bias_acce_var;
-    options.bias_acce_m_var_ = eskf_param_.bias_acce_m_var;
+    //options.bias_acce_m_var_ = eskf_param_.bias_acce_m_var;
     options.vision_xy_noise_ = eskf_param_.vision_xy_noise;
     options.vision_z_noise_ = eskf_param_.vision_z_noise;
     options.vision_roll_pitch_noise_ = eskf_param_.vision_roll_pitch_noise;
@@ -148,7 +148,7 @@ void LandingTargetPose::Init()
     imu_timeout_ = 0.5;
     tf_timeout_ = 0.5;
     imu_init_flag_ = false;
-    imu0_init_flag_ = false;
+    //imu0_init_flag_ = false;
     // tf_init_flag_ = false;
     get_new_landing_target_ = false;
     get_new_landing_target_time_ = ros::Time(0);
@@ -196,11 +196,12 @@ void LandingTargetPose::ImuCallback(const sensor_msgs::Imu::ConstPtr &msg)
     imu_init_flag_ = true;
 }
 
-void LandingTargetPose::Imu0Callback(const sensor_msgs::Imu::ConstPtr &msg)
-{
-    imu0_ = *msg;
-    imu0_init_flag_ = true;
-}
+// lc delete
+// void LandingTargetPose::Imu0Callback(const sensor_msgs::Imu::ConstPtr &msg)
+// {
+//     imu0_ = *msg;
+//     imu0_init_flag_ = true;
+// }
 
 void LandingTargetPose::LocalPosCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
@@ -426,7 +427,7 @@ void LandingTargetPose::EskfTimerCallback(const ros::TimerEvent &event)
     // ================= 预测逻辑控制 =================
     if (eskf_enabled_ && eskf_init_flag_) { 
         try {
-            eskf_.Predict(imu_, imu0_);
+            eskf_.Predict(imu_);
         } catch (const std::exception& e) {
             ROS_ERROR_STREAM("ESKF prediction failed: " << e.what());
         }

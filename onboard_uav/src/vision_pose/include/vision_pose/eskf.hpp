@@ -55,7 +55,7 @@ public:
         double acce_var_ = 1e-2;        // 加计测量标准差
         double bias_gyro_var_ = 1e-6;   // 陀螺零偏游走标准差
         double bias_acce_var_ = 1e-4;   // 加计零偏游走标准差
-        double bias_acce_m_var_ = 1e-4; // 母机加计零偏游走标准差
+        //double bias_acce_m_var_ = 1e-4; // 母机加计零偏游走标准差
 
         /// 视觉观测参数
         // xy位置噪声
@@ -91,12 +91,12 @@ public:
         options_ = options;
         bg_ = init_bg;
         ba_ = init_ba;
-        // g_ = gravity;
+        g_ = gravity;
         cov_ = Mat18T::Identity() * 1e-4;
     }
 
     /// 使用IMU递推
-    bool Predict(const sensor_msgs::Imu &imu, const sensor_msgs::Imu &imu_m);
+    bool Predict(const sensor_msgs::Imu &imu);
 
     /// 使用视觉观测
     bool ObserveVision(const geometry_msgs::PoseStamped &pose);
@@ -128,7 +128,7 @@ public:
         v_ = x.v_;
         bg_ = x.bg_;
         ba_ = x.ba_;
-        // g_ = grav;
+        g_ = grav;
     }
 
     /// 设置协方差
@@ -164,16 +164,17 @@ private:
         double et = options.gyro_var_;
         double eg = options.bias_gyro_var_;
         double ea = options.bias_acce_var_;
-        double eam = options.bias_acce_m_var_;
+        //double eam = options.bias_acce_m_var_;
 
         double ev2 = ev * ev;
         double et2 = et * et;
         double eg2 = eg * eg;
         double ea2 = ea * ea;
-        double eam2 = eam * eam;
+        //double eam2 = eam * eam;
 
         // 设置过程噪声 TODO
-        Q_.diagonal() << 0, 0, 0, ev2, ev2, ev2, et2, et2, et2, ea2, ea2, ea2, eam2, eam2, eam2, eg2, eg2, eg2;
+        // Q_.diagonal() << 0, 0, 0, ev2, ev2, ev2, et2, et2, et2, ea2, ea2, ea2, eam2, eam2, eam2, eg2, eg2, eg2;
+        Q_.diagonal() << 0, 0, 0, ev2, ev2, ev2, et2, et2, et2, ea2, ea2, ea2, eg2, eg2, eg2, 0, 0, 0;
     }
 
     /// 更新名义状态变量，重置error state
@@ -186,14 +187,15 @@ private:
         if (options_.update_bias_acce_)
         {
             ba_ += dx_.template block<3, 1>(9, 0);
-            ba_m_ += dx_.template block<3, 1>(12, 0);
+            //ba_m_ += dx_.template block<3, 1>(12, 0);
         }
         if (options_.update_bias_gyro_)
         {
-            bg_ += dx_.template block<3, 1>(15, 0);
+            //bg_ += dx_.template block<3, 1>(15, 0);
+            bg_ += dx_.template block<3, 1>(12, 0);
         }
 
-        // g_ += dx_.template block<3, 1>(15, 0);
+        g_ += dx_.template block<3, 1>(15, 0);
 
         ProjectCov();
         dx_.setZero();
@@ -249,8 +251,10 @@ private:
     VecT v_ = VecT::Zero();
     SO3 R_;
     VecT ba_ = VecT::Zero();
-    VecT ba_m_ = VecT::Zero();
+    //VecT ba_m_ = VecT::Zero();
     VecT bg_ = VecT::Zero();
+    VecT g_{0, 0, -9.8};
+
 
     /// 误差状态
     Vec18T dx_ = Vec18T::Zero();
@@ -273,7 +277,7 @@ using ESKFD = ESKF<double>;
 using ESKFF = ESKF<float>;
 
 template <typename S>
-bool ESKF<S>::Predict(const sensor_msgs::Imu &imu, const sensor_msgs::Imu &imu_m)
+bool ESKF<S>::Predict(const sensor_msgs::Imu &imu)
 {
     //确保imu时序正确
     assert(imu.header.stamp.toSec() >= current_time_);
@@ -292,13 +296,17 @@ bool ESKF<S>::Predict(const sensor_msgs::Imu &imu, const sensor_msgs::Imu &imu_m
     Vec3d gyro = Vec3d(imu.angular_velocity.x, imu.angular_velocity.y, imu.angular_velocity.z);
     Vec3d acce = Vec3d(imu.linear_acceleration.x, imu.linear_acceleration.y, imu.linear_acceleration.z);
     // Vec3d gyro_m = Vec3d(imu_m.angular_velocity.x, imu_m.angular_velocity.y, imu_m.angular_velocity.z);
-    Vec3d acce_m = Vec3d(imu_m.linear_acceleration.x, imu_m.linear_acceleration.y, imu_m.linear_acceleration.z);
+    //Vec3d acce_m = Vec3d(imu_m.linear_acceleration.x, imu_m.linear_acceleration.y, imu_m.linear_acceleration.z);
 
+
+    //离散化名义状态更新
     // nominal state 递推
     //位置预测 融合双机线加速度
-    VecT new_p = p_ + v_ * dt + 0.5 * (R_ * (acce - ba_)) * dt * dt - 0.5 * (acce_m - ba_m_) * dt * dt;
+    // VecT new_p = p_ + v_ * dt + 0.5 * (R_ * (acce - ba_)) * dt * dt - 0.5 * (acce_m - ba_m_) * dt * dt;
+    VecT new_p = p_ + v_ * dt + 0.5 * (R_ * (acce - ba_)) * dt * dt + 0.5 * g_ * dt * dt;
     //速度预测 差分线加速度
-    VecT new_v = v_ + R_ * (acce - ba_) * dt - (acce_m - ba_m_) * dt;
+    // VecT new_v = v_ + R_ * (acce - ba_) * dt - (acce_m - ba_m_) * dt;
+    VecT new_v = v_ + R_ * (acce - ba_) * dt + g_ * dt;
     //姿态预测 融合陀螺仪偏置
     SO3 new_R = R_ * SO3::exp((gyro - bg_) * dt);
 
@@ -307,21 +315,24 @@ bool ESKF<S>::Predict(const sensor_msgs::Imu &imu, const sensor_msgs::Imu &imu_m
     p_ = new_p;
     // 其余状态维度不变
 
+    // 离散化误差状态更新
     // error state 递推
     // 计算运动过程雅可比矩阵 F，见(3.47)
     // F实际上是稀疏矩阵，也可以不用矩阵形式进行相乘而是写成散装形式，这里为了教学方便，使用矩阵形式
     // 注意bg和ba的顺序
+    //F 误差状态转移矩阵
     Mat18T F = Mat18T::Identity();                                           // 主对角线
     F.template block<3, 3>(0, 3) = Mat3T::Identity() * dt;                   // p 对 v
     F.template block<3, 3>(3, 6) = -R_.matrix() * SO3::hat(acce - ba_) * dt; // v对theta
-    F.template block<3, 3>(3, 9) = -R_.matrix() * dt;                        // v 对 ba
-    F.template block<3, 3>(3, 12) = Mat3T::Identity() * dt;                  // v 对 ba_m
+    F.template block<3, 3>(3, 12) = -R_.matrix() * dt;                        // v 对 ba
+    F.template block<3, 3>(3, 15) = Mat3T::Identity() * dt;                  // v 对 g
     F.template block<3, 3>(6, 6) = SO3::exp(-(gyro - bg_) * dt).matrix();    // theta 对 theta
-    F.template block<3, 3>(6, 15) = -Mat3T::Identity() * dt;                 // theta 对 bg
+    F.template block<3, 3>(6, 9) = -Mat3T::Identity() * dt;                 // theta 对 bg
 
     // mean and cov prediction
     dx_ = F * dx_; // 这行其实没必要算，dx_在重置之后应该为零，因此这步可以跳过，但F需要参与Cov部分计算，所以保留
     //协方差更新
+    // Q过程噪声协方差矩阵
     cov_ = F * cov_.eval() * F.transpose() + Q_;
     current_time_ = imu.header.stamp.toSec();
     // CalcVisionPose();
@@ -391,7 +402,7 @@ bool ESKF<S>::ObserveSE3(const SE3 &pose)
     Mat3T h23 = -R_mt_.matrix().transpose() * R_.matrix();
 
 
-
+    //H矩阵 观测量对状态量的偏导
     H.template block<3, 3>(0, 0) = h11; // p 对 dp
     H.template block<3, 3>(0, 6) = h13; // p 对 dtheta
     H.template block<3, 3>(3, 6) = h23; // R 对 dtheta

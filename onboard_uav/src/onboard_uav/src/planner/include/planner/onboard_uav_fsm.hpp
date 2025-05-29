@@ -49,6 +49,7 @@ private:
         // WAIT_SIGNAL,        // 悬停等待母机信号
         MISSION,   // 执行任务
         REMOTE_GUIDE, // 远程引导，跟随母机飞行轨迹
+        SEARCH,
         DOCKING,   // 空中对接
         LAND,      // 就地降落
         FAIL_SAFE, // 故障保护，悬停
@@ -199,7 +200,9 @@ private:
     void Pub_px4_cmd(float target_x, float target_y, float target_z);
     void Pub_FSM_State();
     void Pub_Guidance_State();
-
+    bool Circle_Search();
+    void Run_Search();
+    
     mavros_msgs::State uav_state_;              // 无人机状态
     geometry_msgs::PoseStamped uav_local_pose_; // 无人机本地位置
     geometry_msgs::TwistStamped uav_local_vel_; // 无人机本地速度
@@ -277,5 +280,7 @@ private:
     //远程引导标志位
     int rg_flag = 0;
 
+    Eigen::Vector2d circle_search_target = Eigen::Vector2d(0.0, 0.0);   
+    bool search_flag = false;
 
 };

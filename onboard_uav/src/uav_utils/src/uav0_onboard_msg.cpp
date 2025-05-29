@@ -83,6 +83,7 @@ public:
             runTakeoff();
         }
 
+        //DEFAULT false
         if (use_param_ctrl_)
         {
             if (flight_command_ == quadrotor_msgs::Onboard::MISSION)
@@ -98,6 +99,8 @@ public:
                 runDockingLanding();
             }
         }
+
+        //默认进入此代码块
         else if (onboard_msg_sub_.target_uav_id == uav_id_)
         {
             if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::TAKEOFF_COMPLETE)
@@ -106,14 +109,23 @@ public:
             }
             else if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::MISSION_COMPLETE)
             {
-                runDockingReturn();
+                //runDockingReturn();
+                runRemoteGuidance();
             }
-            else if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::LAND_COMPLETE)
+            else if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE)
             {
+                runSearch();
+            }
+            else if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::SEARCH_COMPLETE)
+            {
+                runDockingReturn();
             }
             else if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::RETURN_COMPLETE)
             {
                 runDockingLanding();
+            }
+            else if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::LAND_COMPLETE)
+            {
             }
             else if (onboard_msg_sub_.flight_status == quadrotor_msgs::Onboard::PRECISION_LANDING_COMPLETE)
             {
@@ -169,7 +181,7 @@ public:
         }
         onboard_msg_pub_.header.stamp = ros::Time::now();
         onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::TAKEOFF;
-        onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::IDLE;
+        //onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::IDLE;
         onboard_msg_pub_.position.x = start_pose_.pose.position.x;
         onboard_msg_pub_.position.y = start_pose_.pose.position.y;
         onboard_msg_pub_.position.z = start_pose_.pose.position.z + 1.0;
@@ -187,50 +199,46 @@ public:
 
         onboard_msg_pub_.header.stamp = ros::Time::now();
         onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::MISSION;
-        onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::TAKEOFF_COMPLETE;
+        //onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::TAKEOFF_COMPLETE;
         onboard_msg_pub_.position.x = start_pose_.pose.position.x + mission_pos_x_;
         onboard_msg_pub_.position.y = start_pose_.pose.position.y + mission_pos_y_;
         onboard_msg_pub_.position.z = start_pose_.pose.position.z + mission_pos_z_;
         onboard_pub_.publish(onboard_msg_pub_);
     }
-    // void runMission()
-    // {
-    //     // 悬停一会
-    //     // static int mission_count = 0;
-    //     // if (mission_count++ < 10)
-    //     // {
-    //     //     return;
-    //     // }
 
-    //     Eigen::Vector3d uav_pose = Eigen::Vector3d(uav_pose_.pose.position.x, uav_pose_.pose.position.y, uav_pose_.pose.position.z);
+    void runRemoteGuidance()
+    {
+        static int remoteguide_count = 0;
+        if (remoteguide_count++ > 10)
+        {
+            return;
+        }
+        onboard_msg_pub_.header.stamp = ros::Time::now();
+        onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::REMOTE_GUIDE;
+        //onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
+        //position 此处没用到
+        onboard_msg_pub_.position.x = start_pose_.pose.position.x;
+        onboard_msg_pub_.position.y = start_pose_.pose.position.y;
+        onboard_msg_pub_.position.z = start_pose_.pose.position.z + 1.0;
+        onboard_pub_.publish(onboard_msg_pub_);
+    }
 
-    //     static int mission_index = 0;
-    //     if((uav_pose - mission_pos_list_[mission_index]).norm() < 1.0)
-    //     {
-    //         if(mission_index < mission_pos_list_.size())
-    //         {
-    //             mission_index++;
-    //         }
-    //     }
-
-    //     if(mission_index == mission_pos_list_.size() -2)
-    //     {
-    //         static int mission_count = 0;
-    //         if (mission_count++ < 30)
-    //         {
-    //             return;
-    //         }
-    //     }
-
-    //     onboard_msg_pub_.position.x = start_pose_.pose.position.x + mission_pos_list_[mission_index](0);
-    //     onboard_msg_pub_.position.y = start_pose_.pose.position.y + mission_pos_list_[mission_index](1);
-    //     onboard_msg_pub_.position.z = start_pose_.pose.position.z + mission_pos_list_[mission_index](2);
-
-    //     onboard_msg_pub_.header.stamp = ros::Time::now();
-    //     onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::MISSION;
-    //     onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::TAKEOFF_COMPLETE;
-    //     onboard_pub_.publish(onboard_msg_pub_);
-    // }
+    void runSearch()
+    {
+        static int search_count = 0;
+        if (search_count++ > 10)
+        {
+            return;
+        }
+        onboard_msg_pub_.header.stamp = ros::Time::now();
+        onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::SEARCH;
+        //onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::SEARCH_COMPLETE;
+        //position 此处没用到
+        onboard_msg_pub_.position.x = start_pose_.pose.position.x;
+        onboard_msg_pub_.position.y = start_pose_.pose.position.y;
+        onboard_msg_pub_.position.z = start_pose_.pose.position.z + 1.0;
+        onboard_pub_.publish(onboard_msg_pub_);
+    }
 
     void runDockingReturn()
     {
@@ -250,8 +258,9 @@ public:
         }
 
         onboard_msg_pub_.header.stamp = ros::Time::now();
-        onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
+        //onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
         // 返航目标位置，onboard_uav_fsm中会加上子母机起点位置偏移量，从而得到子机坐标系下的返航目标位置
+        //没用到position
         if (have_msg_)
         {
             onboard_msg_pub_.position.x = uav0_pose_.pose.position.x;
@@ -271,13 +280,15 @@ public:
     void runDockingLanding()
     {
         static int landing_count = 0;
+        //写什么jb
         if (landing_count++ < 10 && landing_count > 20)
         {
             return;
         }
         onboard_msg_pub_.header.stamp = ros::Time::now();
         onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::ALLOW_PRECISION_LANDING;
-        onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::RETURN_COMPLETE;
+        //onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::RETURN_COMPLETE;
+        //没用到position
         onboard_msg_pub_.position.x = start_pose_.pose.position.x + uav0_pose_.pose.position.x;
         onboard_msg_pub_.position.y = start_pose_.pose.position.y + uav0_pose_.pose.position.y;
         onboard_msg_pub_.position.z = start_pose_.pose.position.z + uav0_pose_.pose.position.z;
