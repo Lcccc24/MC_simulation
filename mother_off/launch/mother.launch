@@ -5,10 +5,10 @@
     <node pkg="mother_off" type="mother_ctrl" name="mother_ctrl" output="screen" />
         <param name="target_wp1_x" type="double" value="0.0" />
         <param name="target_wp1_y" type="double" value="0.0" />
-        <param name="target_wp1_z" type="double" value="2.5" />
+        <param name="target_wp1_z" type="double" value="1.5" />
         <param name="target_wp2_x" type="double" value="-2.0" />
         <param name="target_wp2_y" type="double" value="-2.0" />
-        <param name="target_wp2_z" type="double" value="2.5" />
+        <param name="target_wp2_z" type="double" value="1.5" />
         <param name="standby_time" type="int" value="10" />
 
 </launch>
