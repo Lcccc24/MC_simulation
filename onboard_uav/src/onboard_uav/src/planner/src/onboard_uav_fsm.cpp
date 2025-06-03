@@ -1241,7 +1241,7 @@ void OnboardUavFsm::RunDockingLanding()
 
         static int landing_descend_complete_count = 0;
 
-        if (std::fabs(relative_pos.z()) < docking_param_.descend_ver_bias && horizontal_distance < docking_param_.descend_ver_bias)
+        if (std::fabs(relative_pos.z()) < docking_param_.descend_ver_bias && horizontal_distance < docking_param_.descend_hor_bias)
         {
             landing_descend_complete_count++;
             // is_first_run_ = true; // 飞行中不需要重新规划
@@ -1308,7 +1308,7 @@ void OnboardUavFsm::RunDockingLanding()
 
         target_pos_.x() = landing_target_pose_.pose.position.x;
         target_pos_.y() = landing_target_pose_.pose.position.y;
-        target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.rec_hor_bias;
+        target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.rec_ver_bias - 0.06;
         target_vel_ = Eigen::Vector3d::Zero();
         target_q_.x() = landing_target_pose_.pose.orientation.x;
         target_q_.y() = landing_target_pose_.pose.orientation.y;

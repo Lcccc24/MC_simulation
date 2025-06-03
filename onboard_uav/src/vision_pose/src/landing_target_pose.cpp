@@ -68,7 +68,7 @@ void LandingTargetPose::getParam()
     // nh_.param("frame/uav0_to_tag_q_z", frame_param_.uav0_to_tag_q.z(), 0.0);
     // nh_.param("frame/uav0_to_tag_q_w", frame_param_.uav0_to_tag_q.w(), 1.0);
     frame_param_.body_to_camera_p = Eigen::Vector3d(-0.08, 0.0, 0.0);
-    //绕z旋转90，绕x旋转180
+    //绕x旋转180，绕z旋转90
     frame_param_.body_to_camera_q = Eigen::Quaterniond(0.0, 0.707, -0.707, 0.0);
     frame_param_.body_to_camera_q.normalize();
     frame_param_.uav0_to_tag_p = Eigen::Vector3d(0.0, 0.0, 0.1);
