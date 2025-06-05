@@ -40,7 +40,7 @@ int main(int argc, char **argv)
     uav0_p_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/pose", 1, &Uav0LocalPoseCallback);
     uav1_p_sub_ = nh.subscribe("/AVC/mavros/local_position/pose", 1, &Uav1LocalPoseCallback);
     fakeuwb_dis_pub = nh.advertise<std_msgs::Float64>("/fake_uwb_distance",10);
-    ros::Rate rate(20);
+    ros::Rate rate(50);
 
     while(1)
     {

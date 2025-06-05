@@ -8,6 +8,7 @@ LandingTargetPose::LandingTargetPose(ros::NodeHandle &nh) : nh_(nh) //, tf_liste
     //uav0_imu_sub_ = nh_.subscribe<sensor_msgs::Imu>("/AVC/mavros/imu/data_raw", 1, &LandingTargetPose::Imu0Callback, this);
     uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/Sub_UAV/mavros/local_position/pose", 1, &LandingTargetPose::LocalPosCallback, this);
     tag_detection_sub_ = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(tag_param_.topic_name, 1, &LandingTargetPose::TagDetectionCallback, this);
+    ite_estimate_sub = nh_.subscribe<geometry_msgs::Vector3>("/ite_relative/estimate", 1, &LandingTargetPose::IteEstimateCallback, this);
     // gazebo_true_sub_ = nh_.subscribe<gazebo_msgs::ModelStates>("/gazebo/model_states", 1, &LandingTargetPose::GazeboTrueCallback, this);
     landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_raw", 1);
     landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose/ESKF", 1);
@@ -243,52 +244,10 @@ void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetecti
     }
 }
 
-// void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg)
-// {
-//     static int count;
-
-//     if (msg->detections.size() == 0)
-//     {
-//         return;
-//     }
-
-//     count++;
-
-//     if(count < 16)
-//     {
-//         for (const auto &detection : msg->detections)
-//         {
-//             if (detection.id[0] == 0 && detection.id[1] == 1)
-//             {
-//                 if (std::fabs(detection.pose.pose.pose.position.z) > tag_param_.tag_valid_distance)
-//                 {
-//                     return;
-//                 }
-//                 tag_pose_.header = detection.pose.header;
-//                 tag_pose_.pose = detection.pose.pose.pose;
-//                 get_new_landing_target_ = true;
-//                 get_new_landing_target_time_ = ros::Time::now();
-
-//                 //lc add: 标记视觉数据有效
-//                 last_vision_time_ = ros::Time::now().toSec();
-//                 vision_valid_ = true;
-            
-//                 //lc add: 视觉恢复时重新激活ESKF
-//                 if (!eskf_enabled_) {
-//                     ROS_INFO("Vision recovered, activating ESKF");
-//                     eskf_enabled_ = true;
-//                 }
-
-//                 break;
-//             }
-//         }
-//     }
-//     else{
-//         if(count > 30)
-//             count = 0;  
-//         return;
-//     }    
-// }
+void LandingTargetPose::IteEstimateCallback(const geometry_msgs::Vector3::ConstPtr &msg)
+{
+    relative_pos = Eigen::Vector3d(msg->x, msg->y, msg->z);
+}
 
 void LandingTargetPose::GazeboTrueCallback(const gazebo_msgs::ModelStates::ConstPtr &msg)
 {
@@ -441,6 +400,8 @@ void LandingTargetPose::EskfTimerCallback(const ros::TimerEvent &event)
         if (eskf_enabled_ && IsTagPoseValid()) {
             try {
                 eskf_.ObserveVision(tag_pose_);
+                //lcadd
+                eskf_.ObserveRelativePos(relative_pos);
             } catch (const std::exception& e) {
                 ROS_ERROR_STREAM("ESKF observation failed: " << e.what());
             }
@@ -520,6 +481,7 @@ void LandingTargetPose::CalculateLandingTargetPose()
     landing_target_pose_.pose.orientation.x = q_el.x();
     landing_target_pose_.pose.orientation.y = q_el.y();
     landing_target_pose_.pose.orientation.z = q_el.z();
+    ROS_INFO("p_ms:XYZ:%f, %f, %f", p_ms.x(), p_ms.y(), p_ms.z());
 }
 
 void LandingTargetPose::CalculateLandingTargetPoseRaw()

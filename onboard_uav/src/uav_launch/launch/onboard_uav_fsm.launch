@@ -68,7 +68,7 @@
         <param name="/uav0_onboard/use_param_ctrl" type="bool" value="false" />
         <param name="/uav0_onboard/mission_pos_x" type="double" value="-2.0" />
         <param name="/uav0_onboard/mission_pos_y" type="double" value="-2.0" />
-        <param name="/uav0_onboard/mission_pos_z" type="double" value="2.0" />
+        <param name="/uav0_onboard/mission_pos_z" type="double" value="3.0" />
 
     <!-- 可视化无人机 -->
     <node pkg="uav_utils" type="uav_pose_vis" name="uav_pose_vis" output="screen" >

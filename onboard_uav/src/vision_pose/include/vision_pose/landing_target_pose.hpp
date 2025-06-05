@@ -2,12 +2,14 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Transform.h>
 #include <geometry_msgs/TransformStamped.h>
+#include <geometry_msgs/Vector3.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <sensor_msgs/Imu.h>
 #include "vision_pose/eskf.hpp"
 #include "sophus/se3.hpp"
+#include <Eigen/Dense>
 
 #include <apriltag_ros/AprilTagDetectionArray.h>
 #include <gazebo_msgs/ModelStates.h>
@@ -69,7 +71,7 @@ private:
     frame_param frame_param_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_ , tag_detection_sub_ , gazebo_true_sub_;
+    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_ , tag_detection_sub_ , gazebo_true_sub_, ite_estimate_sub;
     ros::Publisher landing_target_pose_raw_pub_, landing_target_pose_pub_;
     geometry_msgs::TransformStamped camera_to_tag_tf_;
     //tf2_ros::Buffer tf_buffer_;
@@ -80,6 +82,7 @@ private:
     void LocalPosCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg);
     void GazeboTrueCallback(const gazebo_msgs::ModelStates::ConstPtr &msg);
+    void IteEstimateCallback(const geometry_msgs::Vector3::ConstPtr &msg);
 
     bool GetTagPose();
 
@@ -96,6 +99,7 @@ private:
     //sensor_msgs::Imu imu0_;
     geometry_msgs::PoseStamped tag_pose_, last_tag_pose_;
     geometry_msgs::PoseStamped uav_local_pos_;
+    Eigen::Vector3d relative_pos;
 
     geometry_msgs::PoseStamped landing_target_pose_raw_, landing_target_pose_;
 

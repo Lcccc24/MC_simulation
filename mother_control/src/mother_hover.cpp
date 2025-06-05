@@ -70,7 +70,7 @@ int main(int argc, char **argv)
     goal.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
     goal.header.stamp = ros::Time::now();
     goal.type_mask = POSITION_CONTROL;
-    goal.position.x = -1.0;
+    goal.position.x = 1.0;
     goal.position.y = 2.0;
     goal.position.z = 1.5;
 
@@ -116,7 +116,7 @@ int main(int argc, char **argv)
         }
 
         else{
-            goal.position.x = -1.0;
+            goal.position.x = 1.0;
             goal.position.y = 2.0;
             goal.position.z = 1.5;
         }

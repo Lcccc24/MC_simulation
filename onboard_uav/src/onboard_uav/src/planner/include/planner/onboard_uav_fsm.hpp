@@ -7,6 +7,8 @@
 #include <ros/ros.h>
 #include <std_msgs/Empty.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/Float64.h>
+#include <std_msgs/Int32.h>
 #include <std_msgs/Bool.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -27,8 +29,7 @@
 #include "traj_opt/traj_opt.h"
 #include "vis_utils/vis_utils.hpp"
 #include <nlink_parser/LinktrackNodeframe2.h>
-#include <std_msgs/Float64.h>
-#include <std_msgs/Int32.h>
+
 
 // namespace onboard_uav
 
@@ -249,8 +250,8 @@ private:
     std::array<Eigen::Vector3d, 4> p_set = {
         Eigen::Vector3d(0.0, 0.0, 0.0),
         Eigen::Vector3d(0.0, -1.0, 1.0),  
-        Eigen::Vector3d(1.0, -1.0, 0.0),
-        Eigen::Vector3d(1.0, 0.0, 1.0)
+        Eigen::Vector3d(-1.0, -1.0, 0.0),
+        Eigen::Vector3d(-1.0, 0.0, 1.0)
  
     };
 

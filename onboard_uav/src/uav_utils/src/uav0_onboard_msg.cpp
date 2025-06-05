@@ -18,8 +18,8 @@ public:
         nh_.setParam("/uav0_onboard/flight_command", 0);                   // Flight modes
         nh_.getParam("/uav0_onboard/uav_id", uav_id_);                     // UAV ID
         nh_.getParam("/uav0_onboard/target_uav_id", target_uav_id_);       // Target UAV ID
-        nh_.param("/uav0_onboard/mission_pos_x", mission_pos_x_, 2.0);     // Mission position x
-        nh_.param("/uav0_onboard/mission_pos_y", mission_pos_y_, 1.0);     // Mission position y
+        nh_.param("/uav0_onboard/mission_pos_x", mission_pos_x_, -2.0);     // Mission position x
+        nh_.param("/uav0_onboard/mission_pos_y", mission_pos_y_, -2.0);     // Mission position y
         nh_.param("/uav0_onboard/mission_pos_z", mission_pos_z_, 2.0);     // Mission position z
 
         // 订阅无人机的位置话题
@@ -216,10 +216,9 @@ public:
         onboard_msg_pub_.header.stamp = ros::Time::now();
         onboard_msg_pub_.flight_command = quadrotor_msgs::Onboard::REMOTE_GUIDE;
         //onboard_msg_pub_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
-        //position 此处没用到
-        onboard_msg_pub_.position.x = start_pose_.pose.position.x;
-        onboard_msg_pub_.position.y = start_pose_.pose.position.y;
-        onboard_msg_pub_.position.z = start_pose_.pose.position.z + 1.0;
+        onboard_msg_pub_.position.x = start_pose_.pose.position.x + mission_pos_x_;
+        onboard_msg_pub_.position.y = start_pose_.pose.position.y + mission_pos_y_;
+        onboard_msg_pub_.position.z = start_pose_.pose.position.z + mission_pos_z_;
         onboard_pub_.publish(onboard_msg_pub_);
     }
 

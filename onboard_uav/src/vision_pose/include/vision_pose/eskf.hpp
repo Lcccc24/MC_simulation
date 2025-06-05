@@ -67,6 +67,9 @@ public:
         // 偏航角噪声
         double vision_yaw_noise_ = 0.05;
 
+        // 迭代估计 观测参数
+        double iter_est_noise_ = 0.2;
+
         /// 其他配置
         bool update_bias_gyro_ = true; // 是否更新陀螺bias
         bool update_bias_acce_ = true; // 是否更新加计bias
@@ -109,6 +112,8 @@ public:
      * @return
      */
     bool ObserveSE3(const SE3 &pose);
+
+    bool ObserveRelativePos(const Vec3d &pos);
 
     /// accessors
     /// 获取全量状态
@@ -425,14 +430,36 @@ bool ESKF<S>::ObserveSE3(const SE3 &pose)
     dx_ = K * innov;
     cov_ = (Mat18T::Identity() - K * H) * cov_;
 
-    // 增加零偏更新 lc add
-    // if (options_.update_bias_gyro_) {
-    //     bg_ += K.template block<3,1>(15,0); // 陀螺零偏更新
-    // }
-    // if (options_.update_bias_acce_) {
-    //     ba_ += K.template block<3,1>(9,0);  // 加计零偏更新
-    //     ba_m_ += K.template block<3,1>(12,0); // 母机加计零偏更新
-    // }
+
+    UpdateAndReset();
+    return true;
+}
+
+
+//当前姿态对此相对位置观测的影响？？
+template <typename S>
+bool ESKF<S>::ObserveRelativePos(const Vec3d &pos){
+    //当前状态预测位置
+    const Vec3d &p_ms_hat = p_;
+    //残差
+    Vec3d innov = pos - p_ms_hat;
+
+    //观测矩阵
+    Eigen::Matrix<S, 3, 18> H = Eigen::Matrix<S, 3, 18>::Zero();
+    //位置对 δp 的偏导数
+    H.template block<3, 3>(0, 0) = Eigen::Matrix<S, 3, 3>::Identity();
+
+    //观测协方差 
+    Mat3d N;
+    N.diagonal() << options_.vision_xy_noise_, options_.vision_xy_noise_, options_.vision_xy_noise_;
+    
+    
+    //卡尔曼增益
+    Eigen::Matrix<S, 18, 3> K = cov_ * H.transpose() * (H * cov_ * H.transpose() + N).inverse();
+
+    //更新误差状态和协方差
+    dx_ = K * innov;
+    cov_ = (Mat18T::Identity() - K * H) * cov_;
 
     UpdateAndReset();
     return true;
