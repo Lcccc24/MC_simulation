@@ -1,5 +1,5 @@
 #include <traj_opt/traj_opt.h>
-
+#include <traj_opt/traj_metrics.hpp>
 #include <traj_opt/lbfgs_raw.hpp>
 
 namespace traj_opt
@@ -610,6 +610,26 @@ namespace traj_opt
       std::cout << "optimization failed" << std::endl;
       return false;
     }
+
+    TrajMetrics met = evaluateTrajectory(traj, N_, is_landing_, 0.01 /*100Hz*/, 5);
+    met.success = true;
+    met.opt_time_ms = std::chrono::duration<double, std::milli>(toc - tic).count();
+    met.lbfgs_iters = iter_times_;
+    met.final_objective = minObjective;
+    met.max_omega = getMaxOmega(traj);
+    met.replan_t = t_replan;              // 记录是否是重规划
+    met.method = "minco_lbfgs_piece" + std::to_string(N_);
+    // met.scene_id = scene_id;           // 如果你有场景编号就填上
+    met.vio_floor = violate_cost_.cost_floor_;
+    met.vio_v = violate_cost_.cost_v_;
+    met.vio_thrust = violate_cost_.cost_thrust_;
+    met.vio_omega = violate_cost_.cost_omega_;
+    met.vio_yaw = violate_cost_.cost_yaw_;
+    met.vio_perching_collision = violate_cost_.cost_perching_collision_;
+    met.vio_dist = violate_cost_.cost_dist_;
+
+    appendMetricsToCsv(met, "/home/lc/mc_simu_ws/traj_metrics.csv");
+
     // 计算优化后的时间步长和总时间
     //此时参数都经过优化器处理 tailS跟objectiveFunc函数最后一次输出的tails相同
     double dT = expC2(t);
@@ -636,7 +656,7 @@ namespace traj_opt
   {
     Eigen::Vector3d pos, vel, acc, jer, snp;
     Eigen::Vector3d grad_tmp, grad_tmp2, grad_tmp3, grad_p, grad_v, grad_a, grad_j;
-    double cost_tmp, cost_inner;
+    double cost_inner;
     Eigen::Matrix<double, 8, 1> beta0, beta1, beta2, beta3, beta4;
     double s1, s2, s3, s4, s5, s6, s7;
     double step, alpha;
@@ -690,82 +710,62 @@ namespace traj_opt
         grad_tmp3.setZero();
         cost_inner = 0.0;
 
-        if (grad_cost_floor(pos, grad_tmp, cost_tmp))
+        if (grad_cost_floor(pos, grad_tmp, violate_cost_.cost_floor_))
         {
           grad_p += grad_tmp;
-          cost_inner += cost_tmp;
-          if (is_landing_)
-          {
-            //std::cout << "floor cost: " << cost_tmp << std::endl;
-          }
+          cost_inner += violate_cost_.cost_floor_;
+          //std::cout << "floor cost: " << violate_cost_.cost_floor_ << std::endl;
         }
 
-        if (grad_cost_v(vel, grad_tmp, cost_tmp))
+        if (grad_cost_v(vel, grad_tmp, violate_cost_.cost_v_))
         {
           grad_v += grad_tmp;
-          cost_inner += cost_tmp;
-          if (is_landing_)
-          {
-            //std::cout << "v cost: " << cost_tmp << std::endl;
-          }
+          cost_inner += violate_cost_.cost_v_;
+          //std::cout << "v cost: " << violate_cost_.cost_v_ << std::endl;
         }
 
-        if (grad_cost_thrust(acc, grad_tmp, cost_tmp))
+        if (grad_cost_thrust(acc, grad_tmp, violate_cost_.cost_thrust_))
         {
           grad_a += grad_tmp;
-          cost_inner += cost_tmp;
-          if (is_landing_)
-          {
-            //std::cout << "thrust cost: " << cost_tmp << std::endl;
-          }
+          cost_inner += violate_cost_.cost_thrust_;
+        //std::cout << "thrust cost: " << violate_cost_.cost_thrust_ << std::endl;
         }
 
-        if (grad_cost_omega(acc, jer, grad_tmp, grad_tmp2, cost_tmp))
+        if (grad_cost_omega(acc, jer, grad_tmp, grad_tmp2, violate_cost_.cost_omega_))
         {
           grad_a += grad_tmp;
           grad_j += grad_tmp2;
-          cost_inner += cost_tmp;
-          if (is_landing_)
-          {
-            //std::cout << "omega cost: " << cost_tmp << std::endl;
-          }
+          cost_inner += violate_cost_.cost_omega_;
+          //std::cout << "omega cost: " << violate_cost_.cost_omega_ << std::endl;
         }
 
-        if (grad_cost_omega_yaw(acc, jer, grad_tmp, grad_tmp2, cost_tmp))
+        if (grad_cost_omega_yaw(acc, jer, grad_tmp, grad_tmp2, violate_cost_.cost_yaw_))
         {
           grad_a += grad_tmp;
           grad_j += grad_tmp2;
-          cost_inner += cost_tmp;
-          if(is_landing_)
-          {
-            //std::cout << "yaw cost: " << cost_tmp << std::endl;
-          }
+          cost_inner += violate_cost_.cost_yaw_;
+          //std::cout << "yaw cost: " << violate_cost_.cost_yaw_ << std::endl;
+
         }
 
         double dur2now = (i + alpha) * mincoOpt_.t(1);
         Eigen::Vector3d car_p = car_p_ + car_v_ * dur2now;
 
-        if (is_landing_ && grad_cost_dist(pos, car_p, grad_tmp, cost_tmp))
+        if (is_landing_ && grad_cost_dist(pos, car_p, grad_tmp, violate_cost_.cost_dist_))
         {
           grad_p += grad_tmp;
-          cost_inner += cost_tmp;
-          if (is_landing_)
-          {
-            //std::cout << "dist cost: " << cost_tmp << std::endl;
-          }
+          cost_inner += violate_cost_.cost_yaw_;
+          //std::cout << "dist cost: " << violate_cost_.cost_yaw_ << std::endl;
         }
 
         if (is_landing_ && grad_cost_perching_collision(pos, acc, car_p,
                                                         grad_tmp, grad_tmp2, grad_tmp3,
-                                                        cost_tmp))
+                                                        violate_cost_.cost_perching_collision_))
         {
           grad_p += grad_tmp;
           grad_a += grad_tmp2;
-          cost_inner += cost_tmp;
-          if (is_landing_)
-          {
-            //std::cout << "collision cost: " << cost_tmp << std::endl;
-          }
+          cost_inner += violate_cost_.cost_perching_collision_;
+          //std::cout << "collision cost: " << violate_cost_.cost_perching_collision_ << std::endl;
         }
         double grad_car_t = grad_tmp3.dot(car_v_);
         
@@ -863,6 +863,9 @@ namespace traj_opt
       //惩罚 == 惩罚函数max(0, vpen)函数输出 * 权重
       costv *= rhoV_;
       return true;
+    } else {
+      costv = 0;
+      return false;
     }
 
     // if(is_landing_)
@@ -879,8 +882,6 @@ namespace traj_opt
     //     return true;
     //   }
     // }
-
-    return false;
   }
 
   bool TrajOpt::grad_cost_thrust(const Eigen::Vector3d &a,
@@ -959,10 +960,12 @@ namespace traj_opt
       grad *= rhoOmega_;
       grada *= grad;
       gradj *= grad;
-
       return true;
+    } else {
+      cost = 0;
+      return false;
     }
-    return false;
+
   }
   bool TrajOpt::grad_cost_omega_yaw(const Eigen::Vector3d &a,
                                     const Eigen::Vector3d &j,
@@ -971,6 +974,7 @@ namespace traj_opt
                                     double &cost)
   {
     // TODO
+    cost = 0;
     return false;
   }
 
@@ -1007,7 +1011,6 @@ namespace traj_opt
     double dist2 = rel_p.head(2).squaredNorm();
     if (dist2 > 0)
     {
-      costd =0;
       double grad = 0;
       static double mu = 0.1;
       costd = smoothedL1(dist2, mu, grad);
@@ -1026,8 +1029,11 @@ namespace traj_opt
       // ROS_INFO("rel_p: %.2f, %.2f, %.2f", rel_p.x(), rel_p.y(), rel_p.z());
       // ROS_INFO("grad_cost_dist: %.2f, %.2f, %.2f", costd, gradd.x(), gradd.y());
       return true;
+    } else {
+      costd = 0;
+      return false;
     }
-    return false;
+    
   }
 
   bool TrajOpt::grad_cost_floor(const Eigen::Vector3d &p,
@@ -1052,6 +1058,7 @@ namespace traj_opt
     }
     else
     {
+      costp = 0;
       return false;
     }
   }
@@ -1079,6 +1086,7 @@ namespace traj_opt
   {
     // TODO 检查降落的目标高度，car_p.z()是否正确，
     //car_p.z() -= 0.01; // 测试
+    cost = 0;
     static double eps = 1e-6;
 
     double dist_sqr = (pos - car_p).squaredNorm();

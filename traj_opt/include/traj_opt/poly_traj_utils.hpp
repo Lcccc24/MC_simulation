@@ -109,6 +109,24 @@ class Piece {
     return jer;
   }
 
+  inline Eigen::Vector3d getSnp(const double &t) const {
+    Eigen::Vector3d snp(0.0, 0.0, 0.0);
+    double tn = 1.0;
+    int k = 1;
+    int l = 2;
+    int m = 3;
+    int n = 4;
+    for (int i = 3; i >= 0; i--) {
+      snp += k * l * m * n * tn * coeffMat.col(i);
+      tn *= t;
+      k++;
+      l++;
+      m++;
+      n++;
+    }
+    return snp;
+  }
+
   inline CoefficientMat normalizePosCoeffMat() const {
     CoefficientMat nPosCoeffsMat;
     double t = 1.0;
@@ -438,6 +456,11 @@ class Trajectory {
   inline Eigen::Vector3d getJer(double t) const {
     int pieceIdx = locatePieceIdx(t);
     return pieces[pieceIdx].getJer(t);
+  }
+
+  inline Eigen::Vector3d getSnp(double t) const {
+    int pieceIdx = locatePieceIdx(t);
+    return pieces[pieceIdx].getSnp(t);
   }
 
   inline Eigen::Vector3d getJuncPos(int juncIdx) const {

@@ -26,6 +26,7 @@ include_directories(
 
 add_library(${PROJECT_NAME}
   src/${PROJECT_NAME}.cpp
+  src/traj_metrics.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

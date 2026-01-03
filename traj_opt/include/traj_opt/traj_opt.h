@@ -42,6 +42,18 @@ namespace traj_opt
         std::vector<Eigen::Vector3d> tracking_visible_ps_;
         std::vector<double> tracking_thetas_;
 
+        struct violate_cost {
+            double cost_floor_ = 0.0;
+            double cost_v_ = 0.0;
+            double cost_thrust_ = 0.0;
+            double cost_omega_ = 0.0;
+            double cost_yaw_ = 0.0;
+            double cost_perching_collision_ = 0.0;
+            double cost_dist_ = 0.0;
+        };
+
+        violate_cost violate_cost_;
+
     public:
         TrajOpt(ros::NodeHandle &nh);
         ~TrajOpt() {}

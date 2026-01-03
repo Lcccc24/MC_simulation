@@ -88,13 +88,13 @@
         <param name="traj_opt/platform_r" value="0.01"/> <!-- 1.0 -->
         <param name="traj_opt/rhoT" value="100000.0"/>
         <param name="traj_opt/rhoVt" value="100000.0"/>
-        <param name="traj_opt/rhoP" value="0.0"/>
-        <param name="traj_opt/rhoD" value="1000.0"/>
-        <param name="traj_opt/rhoV" value="1000.0"/>
-        <param name="traj_opt/rhoA" value="1000.0"/>
+        <param name="traj_opt/rhoP" value="10000.0"/>
+        <param name="traj_opt/rhoD" value="10000.0"/>
+        <param name="traj_opt/rhoV" value="10000.0"/>
+        <param name="traj_opt/rhoA" value="10000.0"/>
         <param name="traj_opt/rhoThrust" value="10000.0"/>
         <param name="traj_opt/rhoOmega" value="100000.0"/>
-        <param name="traj_opt/rhoPerchingCollision" value="0.0"/>
+        <param name="traj_opt/rhoPerchingCollision" value="10000.0"/>
         <param name="traj_opt/pause_debug" value="false"/>
 
 
