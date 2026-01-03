@@ -1,0 +1,266 @@
+#include <nav_msgs/Odometry.h>
+#include <quadrotor_msgs/PolyTraj.h>
+#include <quadrotor_msgs/PositionCommand.h>
+#include <ros/ros.h>
+#include <std_msgs/Empty.h>
+#include <visualization_msgs/Marker.h>
+#include <mavros_msgs/PositionTarget.h>
+#include <traj_opt/poly_traj_utils.hpp>
+
+ros::Publisher pos_cmd_pub_;
+ros::Publisher px4_pos_cmd_pub_;
+ros::Time heartbeat_time_;
+bool receive_traj_ = false;
+bool flight_start_ = false;
+quadrotor_msgs::PolyTraj active_traj_;
+quadrotor_msgs::PolyTraj pending_traj_;
+bool has_active_  = false;
+bool has_pending_ = false;
+Eigen::Vector3d last_p_;
+double last_yaw_ = 0;
+
+void publish_cmd(int traj_id,
+                 const Eigen::Vector3d &p,
+                 const Eigen::Vector3d &v,
+                 const Eigen::Vector3d &a,
+                 double y, double yd)
+{
+    quadrotor_msgs::PositionCommand cmd;
+    cmd.header.stamp = ros::Time::now();
+    cmd.header.frame_id = "world";
+    cmd.trajectory_flag = quadrotor_msgs::PositionCommand::TRAJECTORY_STATUS_READY;
+    cmd.trajectory_id = traj_id;
+
+    cmd.position.x = p(0);
+    cmd.position.y = p(1);
+    cmd.position.z = p(2);
+    cmd.velocity.x = v(0);
+    cmd.velocity.y = v(1);
+    cmd.velocity.z = v(2);
+    cmd.acceleration.x = a(0);
+    cmd.acceleration.y = a(1);
+    cmd.acceleration.z = a(2);
+    cmd.yaw = y;
+    cmd.yaw_dot = yd;
+    pos_cmd_pub_.publish(cmd);
+
+    mavros_msgs::PositionTarget px4_cmd;
+    px4_cmd.header.stamp = ros::Time::now();
+    px4_cmd.header.frame_id = "world";
+    px4_cmd.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
+    px4_cmd.type_mask = 0b100000000000;
+    px4_cmd.position.x = p(0);
+    px4_cmd.position.y = p(1);
+    px4_cmd.position.z = p(2);
+    px4_cmd.velocity.x = v(0);
+    px4_cmd.velocity.y = v(1);
+    px4_cmd.velocity.z = v(2);
+    px4_cmd.yaw = y;
+    // px4_cmd.yaw_rate = yd;
+    // px4_pos_cmd_pub_.publish(px4_cmd);
+    last_p_ = p;
+}
+
+bool exe_traj(const quadrotor_msgs::PolyTraj &trajMsg)
+{   
+    double t = (ros::Time::now() - trajMsg.start_time).toSec();
+    //ROS_WARN("Time: %.2f",t);
+    if (t > 0)
+    {
+        if (trajMsg.hover)
+        {
+            if (trajMsg.hover_p.size() != 3)
+            {
+                ROS_ERROR("[traj_server] hover_p is not 3d!");
+            }
+            Eigen::Vector3d p, v0;
+            p.x() = trajMsg.hover_p[0];
+            p.y() = trajMsg.hover_p[1];
+            p.z() = trajMsg.hover_p[2];
+            v0.setZero();
+            publish_cmd(trajMsg.traj_id, p, v0, v0, last_yaw_, 0); // TODO yaw
+            receive_traj_ = false;
+            return true;
+        }
+        if (trajMsg.order != 7)
+        {
+            ROS_ERROR("[traj_server] Only support trajectory order equals 7 now!");
+            return false;
+        }
+        if (trajMsg.duration.size() * (trajMsg.order + 1) != trajMsg.coef_x.size())
+        {
+            ROS_ERROR("[traj_server] WRONG trajectory parameters!");
+            return false;
+        }
+        int piece_nums = trajMsg.duration.size();
+        std::vector<double> dura(piece_nums);
+        std::vector<CoefficientMat> cMats(piece_nums);
+        for (int i = 0; i < piece_nums; ++i)
+        {
+            int i8 = i * 8;
+            cMats[i].row(0) << trajMsg.coef_x[i8 + 0], trajMsg.coef_x[i8 + 1], trajMsg.coef_x[i8 + 2], trajMsg.coef_x[i8 + 3],
+                trajMsg.coef_x[i8 + 4], trajMsg.coef_x[i8 + 5], trajMsg.coef_x[i8 + 6], trajMsg.coef_x[i8 + 7];
+            cMats[i].row(1) << trajMsg.coef_y[i8 + 0], trajMsg.coef_y[i8 + 1], trajMsg.coef_y[i8 + 2], trajMsg.coef_y[i8 + 3],
+                trajMsg.coef_y[i8 + 4], trajMsg.coef_y[i8 + 5], trajMsg.coef_y[i8 + 6], trajMsg.coef_y[i8 + 7];
+            cMats[i].row(2) << trajMsg.coef_z[i8 + 0], trajMsg.coef_z[i8 + 1], trajMsg.coef_z[i8 + 2], trajMsg.coef_z[i8 + 3],
+                trajMsg.coef_z[i8 + 4], trajMsg.coef_z[i8 + 5], trajMsg.coef_z[i8 + 6], trajMsg.coef_z[i8 + 7];
+
+            dura[i] = trajMsg.duration[i];
+        }
+        Trajectory traj(dura, cMats);
+
+        if (t > traj.getTotalDuration())
+        {
+            if (has_pending_) {
+                // 等 pending 生效：保持最后状态/hover
+                Eigen::Vector3d p = traj.getPos(traj.getTotalDuration());
+                Eigen::Vector3d v = Eigen::Vector3d::Zero();
+                Eigen::Vector3d a = Eigen::Vector3d::Zero();
+                publish_cmd(trajMsg.traj_id, p, v, a, last_yaw_, 0);
+                return true; // 不要让上层停摆
+            } else {
+                receive_traj_ = false;
+                ROS_INFO("[traj_server] trajectory complete!");
+                return false;
+            }
+        }
+        Eigen::Vector3d p, v, a;
+        p = traj.getPos(t);
+        v = traj.getVel(t);
+        a = traj.getAcc(t);
+        ROS_WARN("T,ID,%.2f,%d", t, trajMsg.traj_id);
+        ROS_WARN("P,%.2f,%.2f,%.2f", p.x(), p.y(), p.z());
+        ROS_WARN("V,%.2f,%.2f,%.2f", v.x(), v.y(), v.z());
+
+        // NOTE yaw
+        double yaw = trajMsg.yaw;
+        double d_yaw = yaw - last_yaw_;
+        d_yaw = d_yaw >= M_PI ? d_yaw - 2 * M_PI : d_yaw;
+        d_yaw = d_yaw <= -M_PI ? d_yaw + 2 * M_PI : d_yaw;
+        double d_yaw_abs = fabs(d_yaw);
+        if (d_yaw_abs >= 0.02)
+        {
+            yaw = last_yaw_ + d_yaw / d_yaw_abs * 0.02;
+        }
+        publish_cmd(trajMsg.traj_id, p, v, a, yaw, 0); // TODO yaw
+        last_yaw_ = yaw;
+        
+        // double T = traj.getTotalDuration();
+        // for (int i = 1; i <= 5; i++) {
+        //     double tl = T * (static_cast<double>(i) / 5.0);
+        //     Eigen::Vector3d p = traj.getPos(tl);
+        //     ROS_ERROR("Tl,IDl,%.6f,%d", tl, i);
+        //     ROS_ERROR("Pl,%.6f,%.6f,%.6f", p.x(), p.y(), p.z());
+        // }
+
+
+        return true;
+    }
+    return false;
+}
+
+void heartbeatCallback(const std_msgs::EmptyConstPtr &msg)
+{
+    heartbeat_time_ = ros::Time::now();
+}
+
+void polyTrajCallback(const quadrotor_msgs::PolyTraj::ConstPtr& msg)
+{
+    heartbeat_time_ = ros::Time::now();
+
+    if (!has_active_) {
+        active_traj_ = *msg;
+        has_active_ = true;
+        receive_traj_ = true;
+        ROS_INFO("[traj_server] Set ACTIVE traj_id=%d start=%.3f",
+                 active_traj_.traj_id, active_traj_.start_time.toSec());
+        return;
+    }
+
+    if (has_pending_) {
+        ROS_WARN_THROTTLE(1.0, "[traj_server] Pending exists, ignore new traj_id=%d", msg->traj_id);
+        return;
+    }
+
+    pending_traj_ = *msg;
+    has_pending_ = true;
+
+    double dt = (pending_traj_.start_time - ros::Time::now()).toSec();
+    ROS_INFO("[traj_server] Got PENDING traj_id=%d starts after %.3fs",
+             pending_traj_.traj_id, dt);
+}
+
+void cmdCallback(const ros::TimerEvent &e)
+{
+    if (!receive_traj_ || !has_active_) return;
+
+    ros::Time now = ros::Time::now();
+
+    // heartbeat 检查
+    if ((now - heartbeat_time_).toSec() > 0.5)
+    {
+        ROS_ERROR_ONCE("[traj_server] Lost heartbeat from the planner, is he dead?");
+        publish_cmd(active_traj_.traj_id, last_p_,
+                    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
+                    last_yaw_, 0);
+        return;
+    }
+
+    if (has_pending_ && now >= pending_traj_.start_time)
+    {
+        active_traj_ = pending_traj_;
+        has_pending_ = false;
+
+        ROS_INFO("[traj_server] Switch to ACTIVE traj_id=%d", active_traj_.traj_id);
+    }
+
+    if (exe_traj(active_traj_))
+        return;
+
+    double t_active = (now - active_traj_.start_time).toSec();
+
+    if (t_active < 0.0)
+    {
+        publish_cmd(active_traj_.traj_id, last_p_,
+                    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
+                    last_yaw_, 0);
+        return;
+    }
+
+    if (has_pending_)
+    {
+        // pending 尚未开始：hover 等
+        publish_cmd(active_traj_.traj_id, last_p_,
+                    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
+                    last_yaw_, 0);
+        return;
+    }
+
+    publish_cmd(active_traj_.traj_id, last_p_,
+                Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
+                last_yaw_, 0);
+}
+
+
+int main(int argc, char **argv)
+{
+    ros::init(argc, argv, "traj_server");
+    ros::NodeHandle nh("~");
+
+    ros::Subscriber poly_traj_sub = nh.subscribe("/trajectory", 1, polyTrajCallback);
+    ros::Subscriber heartbeat_sub = nh.subscribe("/heartbeat", 10, heartbeatCallback);
+
+    pos_cmd_pub_ = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 10);
+    px4_pos_cmd_pub_ = nh.advertise<mavros_msgs::PositionTarget>("/Sub_UAV/mavros/setpoint_raw/local", 10);
+
+    ros::Timer cmd_timer = nh.createTimer(ros::Duration(0.1), cmdCallback);
+
+    ros::Duration(1.0).sleep(); 
+
+    // ROS_WARN("[Traj server]: ready!");
+    ROS_INFO("\033[1;32m[Traj server]: ready! \033[0m");
+
+    ros::spin();
+
+    return 0;
+}

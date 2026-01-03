@@ -15,6 +15,7 @@
 #define VELOCITY2D_CONTROL 0b011111000111 //设置好对应的掩码，从右往左依次对应PX/PY/PZ/VX/VY/VZ/AX/AY/AZ/FORCE/YAW/YAW-RATE,设置掩码时注意要用的就加上去，用的就不加，这里是用二进制表示，我需要用到VX/VY/VZ/YAW，所以这四个我给0，其他都是1.
 #define POSITION_CONTROL 0b011111111000 //设置好对应的掩码，从右往左依次对应PX/PY/PZ/VX/VY/VZ/AX/AY/AZ/FORCE/YAW/YAW-RATE
 
+bool is_offboard = false;
 mavros_msgs::State current_state;
 std_msgs::Int32 move_cmd;
 void state_cb(const mavros_msgs::State::ConstPtr& msg){
@@ -93,10 +94,11 @@ int main(int argc, char **argv)
 
         //ROS_INFO("mother hovering");
 
-        if( current_state.mode != "OFFBOARD" && (ros::Time::now() - last_request > ros::Duration(0.5))){
+        if( current_state.mode != "OFFBOARD" && (ros::Time::now() - last_request > ros::Duration(0.5)) && !is_offboard){
             if( set_mode_client.call(offb_set_mode) && offb_set_mode.response.mode_sent){
                 ROS_INFO("Offboard enabled");
             }
+            is_offboard = true;
             last_request = ros::Time::now();
         }
 
@@ -109,16 +111,28 @@ int main(int argc, char **argv)
             }
         }
 
-        if(move_cmd.data == 1){
-            goal.position.x = 3.0;
-            goal.position.y = 5.0;
-            goal.position.z = 2.5;
+        if (move_cmd.data == 1) {
+            goal.position.x = 0.0;
+            goal.position.y = 0.0;
+            goal.position.z = 3.0;
         }
 
-        else{
+        else if (move_cmd.data == 2) {
             goal.position.x = 1.0;
+            goal.position.y = 1.0;
+            goal.position.z = 4.0;
+        }
+
+        else if (move_cmd.data == 3) {
+            goal.position.x = 2.0;
             goal.position.y = 2.0;
-            goal.position.z = 1.5;
+            goal.position.z = 4.0;
+        }
+
+        else {
+            goal.position.x = 2.0;
+            goal.position.y = 2.0;
+            goal.position.z = 2.0;
         }
 
         // 计算经过的时间（秒）
