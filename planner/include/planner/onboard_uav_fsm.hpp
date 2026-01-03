@@ -199,8 +199,6 @@ private:
         bool fly_away_test;
     };
 
-    double normal_time_stitch_;
-    double landing_time_stitch_;
     int normal_minco_piece_;
     int landing_minco_piece_;
     bool is_landing_ = false;

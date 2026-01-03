@@ -499,7 +499,7 @@ class MINCO_S4_Uniform {
   ~MINCO_S4_Uniform() { A.destroy(); }
 
   inline void reset(const int &pieceNum) {
-    //N为控制点个数
+    //N为piece段数 分段多项式
     N = pieceNum;
     //A初始化为带状矩阵结构，矩阵（方阵）维度为8*N，带宽为8
     A.create(8 * N, 8, 8);

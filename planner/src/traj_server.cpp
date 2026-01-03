@@ -12,10 +12,7 @@ ros::Publisher px4_pos_cmd_pub_;
 ros::Time heartbeat_time_;
 bool receive_traj_ = false;
 bool flight_start_ = false;
-quadrotor_msgs::PolyTraj active_traj_;
-quadrotor_msgs::PolyTraj pending_traj_;
-bool has_active_  = false;
-bool has_pending_ = false;
+quadrotor_msgs::PolyTraj trajMsg_, trajMsg_last_;
 Eigen::Vector3d last_p_;
 double last_yaw_ = 0;
 
@@ -111,19 +108,12 @@ bool exe_traj(const quadrotor_msgs::PolyTraj &trajMsg)
 
         if (t > traj.getTotalDuration())
         {
-            if (has_pending_) {
-                // 等 pending 生效：保持最后状态/hover
-                Eigen::Vector3d p = traj.getPos(traj.getTotalDuration());
-                Eigen::Vector3d v = Eigen::Vector3d::Zero();
-                Eigen::Vector3d a = Eigen::Vector3d::Zero();
-                publish_cmd(trajMsg.traj_id, p, v, a, last_yaw_, 0);
-                return true; // 不要让上层停摆
-            } else {
-                receive_traj_ = false;
-                ROS_INFO("[traj_server] trajectory complete!");
-                return false;
-            }
+            receive_traj_ = false;
+            ROS_INFO("[traj_server] trajectory complete!");
+            // ROS_WARN("[traj_server] trajectory too short left!");
+            return false;
         }
+        
         Eigen::Vector3d p, v, a;
         p = traj.getPos(t);
         v = traj.getVel(t);
@@ -164,83 +154,47 @@ void heartbeatCallback(const std_msgs::EmptyConstPtr &msg)
     heartbeat_time_ = ros::Time::now();
 }
 
-void polyTrajCallback(const quadrotor_msgs::PolyTraj::ConstPtr& msg)
+void polyTrajCallback(const quadrotor_msgs::PolyTrajConstPtr &msgPtr)
 {
-    heartbeat_time_ = ros::Time::now();
-
-    if (!has_active_) {
-        active_traj_ = *msg;
-        has_active_ = true;
+    ROS_INFO("REC TRAJ");
+    trajMsg_ = *msgPtr;
+    if (!receive_traj_)
+    {
+        trajMsg_last_ = trajMsg_;
         receive_traj_ = true;
-        ROS_INFO("[traj_server] Set ACTIVE traj_id=%d start=%.3f",
-                 active_traj_.traj_id, active_traj_.start_time.toSec());
-        return;
     }
-
-    if (has_pending_) {
-        ROS_WARN_THROTTLE(1.0, "[traj_server] Pending exists, ignore new traj_id=%d", msg->traj_id);
-        return;
-    }
-
-    pending_traj_ = *msg;
-    has_pending_ = true;
-
-    double dt = (pending_traj_.start_time - ros::Time::now()).toSec();
-    ROS_INFO("[traj_server] Got PENDING traj_id=%d starts after %.3fs",
-             pending_traj_.traj_id, dt);
 }
 
 void cmdCallback(const ros::TimerEvent &e)
-{
-    if (!receive_traj_ || !has_active_) return;
+{   
+    static int count = 0;
 
-    ros::Time now = ros::Time::now();
-
-    // heartbeat 检查
-    if ((now - heartbeat_time_).toSec() > 0.5)
+    if (!receive_traj_)
+    {
+        return;
+    }
+    ros::Time time_now = ros::Time::now();
+    if ((time_now - heartbeat_time_).toSec() > 0.5)
     {
         ROS_ERROR_ONCE("[traj_server] Lost heartbeat from the planner, is he dead?");
-        publish_cmd(active_traj_.traj_id, last_p_,
-                    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
-                    last_yaw_, 0);
+        publish_cmd(trajMsg_.traj_id, last_p_, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), 0, 0); // TODO yaw
         return;
     }
-
-    if (has_pending_ && now >= pending_traj_.start_time)
+    count ++;
+    if(count > 10000)
+        count = 0;
+    ROS_ERROR("count t, %d,%d", count, trajMsg_.traj_id);
+    if (exe_traj(trajMsg_))
     {
-        active_traj_ = pending_traj_;
-        has_pending_ = false;
-
-        ROS_INFO("[traj_server] Switch to ACTIVE traj_id=%d", active_traj_.traj_id);
-    }
-
-    if (exe_traj(active_traj_))
+        trajMsg_last_ = trajMsg_;
         return;
-
-    double t_active = (now - active_traj_.start_time).toSec();
-
-    if (t_active < 0.0)
+    }
+    else if (exe_traj(trajMsg_last_))
     {
-        publish_cmd(active_traj_.traj_id, last_p_,
-                    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
-                    last_yaw_, 0);
+        ROS_ERROR("exe last traj");
         return;
     }
-
-    if (has_pending_)
-    {
-        // pending 尚未开始：hover 等
-        publish_cmd(active_traj_.traj_id, last_p_,
-                    Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
-                    last_yaw_, 0);
-        return;
-    }
-
-    publish_cmd(active_traj_.traj_id, last_p_,
-                Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
-                last_yaw_, 0);
 }
-
 
 int main(int argc, char **argv)
 {

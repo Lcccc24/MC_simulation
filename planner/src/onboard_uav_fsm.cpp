@@ -61,8 +61,6 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("remote_guide/go4_point_invalid_dis", remote_guide_param_.go4_point_invalid_dis, 3.0);
     nh.param("remote_guide/ite_min_count", remote_guide_param_.ite_min_count, 250);
     nh.param("remote_guide/fly_away_test", remote_guide_param_.fly_away_test, false);
-    nh.param("trajectory/normal_time_stitch", normal_time_stitch_, 0.0);
-    nh.param("trajectory/landing_time_stitch", landing_time_stitch_, 0.6);
     nh.param("trajectory/normal_minco_piece", normal_minco_piece_, 10);
     nh.param("trajectory/landing_minco_piece", landing_minco_piece_, 5);
 
@@ -1738,7 +1736,6 @@ void OnboardUavFsm::RunDockingRetry()
 
 bool OnboardUavFsm:: PlanTrajectory()
 {
-    double t_keep = is_landing_ ? landing_time_stitch_ : normal_time_stitch_;
     int N = is_landing_ ? landing_minco_piece_ : normal_minco_piece_;
 
     if (!is_replan_ && !is_first_run_)
@@ -1748,10 +1745,8 @@ bool OnboardUavFsm:: PlanTrajectory()
 
     Eigen::MatrixXd start_state(3, 4);
     start_state.setZero();
-    ros::Time now = ros::Time::now();
+    ros::Time now = ros::Time::now(); 
     double replan_time = (now - replan_start_time_).toSec();
-
-    ros::Time new_start_time = now + ros::Duration(t_keep);
 
     if (is_first_run_ || replan_time > poly_traj_.getTotalDuration())
     {
@@ -1760,12 +1755,10 @@ bool OnboardUavFsm:: PlanTrajectory()
     }
     else
     {
-        double T = poly_traj_.getTotalDuration();
-        double t_stitch = std::min(replan_time + t_keep, T);
-        start_state.col(0) = poly_traj_.getPos(t_stitch);
-        start_state.col(1) = poly_traj_.getVel(t_stitch);
-        start_state.col(2) = poly_traj_.getAcc(t_stitch);
-        start_state.col(3) = poly_traj_.getJer(t_stitch);
+        start_state.col(0) = poly_traj_.getPos(replan_time);
+        start_state.col(1) = poly_traj_.getVel(replan_time);
+        start_state.col(2) = poly_traj_.getAcc(replan_time);
+        start_state.col(3) = poly_traj_.getJer(replan_time);
 
     }
 
@@ -1773,7 +1766,7 @@ bool OnboardUavFsm:: PlanTrajectory()
     if (is_success)
     {
         is_first_run_ = false;
-        replan_start_time_ = new_start_time;
+        replan_start_time_ = now;
         //PubTrajectory函数将经过优化器优化后的轨迹poly_traj_发布
         PubTrajectory(replan_start_time_);
 

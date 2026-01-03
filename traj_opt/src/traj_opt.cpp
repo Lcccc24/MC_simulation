@@ -374,10 +374,10 @@ namespace traj_opt
     {
       // 额外z轴速度
       v_plus_ = 0.00;
-      vmax_ = 1.0;//0.15
+      vmax_ = 0.5;//0.15
       amax_ = 1.0;//2.0
       omega_max_ = 1.0;//3.0
-      rhoV_ = 1000.0;
+      rhoV_ = 100000.0;
       rhoT_ = 10000.0;
     }
     else
@@ -588,6 +588,32 @@ namespace traj_opt
     //用于记录优化过程时间
     auto toc = std::chrono::steady_clock::now();
 
+    TrajMetrics met = evaluateTrajectory(traj, N_, is_landing_, 0.01 /*100Hz*/, 5);
+    met.success = (opt_ret >= 0);
+    met.opt_time_ms = std::chrono::duration<double, std::milli>(toc - tic).count();
+    met.lbfgs_iters = iter_times_;
+    met.final_objective = minObjective;
+    met.max_omega = getMaxOmega(traj);
+    met.replan_t = t_replan;              // 记录是否是重规划
+    met.method = "minco_lbfgs_piece" + std::to_string(N_);
+    // met.scene_id = scene_id;           // 如果你有场景编号就填上
+    met.vio_floor = violate_cost_.cost_floor_;
+    met.vio_v = violate_cost_.cost_v_;
+    met.vio_thrust = violate_cost_.cost_thrust_;
+    met.vio_omega = violate_cost_.cost_omega_;
+    met.vio_yaw = violate_cost_.cost_yaw_;
+    met.vio_perching_collision = violate_cost_.cost_perching_collision_;
+    met.vio_dist = violate_cost_.cost_dist_;
+    std::cout << "floor cost: " << violate_cost_.cost_floor_ << std::endl;
+    std::cout << "v cost: " << violate_cost_.cost_v_ << std::endl;     
+    std::cout << "thrust cost: " << violate_cost_.cost_thrust_ << std::endl;
+    std::cout << "omega cost: " << violate_cost_.cost_omega_ << std::endl;
+    std::cout << "yaw cost: " << violate_cost_.cost_yaw_ << std::endl;
+    std::cout << "dist cost: " << violate_cost_.cost_yaw_ << std::endl;
+    std::cout << "collision cost: " << violate_cost_.cost_perching_collision_ << std::endl;
+
+    appendMetricsToCsv(met, "/home/lc/mc_simu_ws/traj_metrics.csv");
+
     if(opt_ret>=0)
     {
       std::cout << "\033[32m>ret: " << opt_ret << "\033[0m" << std::endl;
@@ -610,25 +636,6 @@ namespace traj_opt
       std::cout << "optimization failed" << std::endl;
       return false;
     }
-
-    TrajMetrics met = evaluateTrajectory(traj, N_, is_landing_, 0.01 /*100Hz*/, 5);
-    met.success = true;
-    met.opt_time_ms = std::chrono::duration<double, std::milli>(toc - tic).count();
-    met.lbfgs_iters = iter_times_;
-    met.final_objective = minObjective;
-    met.max_omega = getMaxOmega(traj);
-    met.replan_t = t_replan;              // 记录是否是重规划
-    met.method = "minco_lbfgs_piece" + std::to_string(N_);
-    // met.scene_id = scene_id;           // 如果你有场景编号就填上
-    met.vio_floor = violate_cost_.cost_floor_;
-    met.vio_v = violate_cost_.cost_v_;
-    met.vio_thrust = violate_cost_.cost_thrust_;
-    met.vio_omega = violate_cost_.cost_omega_;
-    met.vio_yaw = violate_cost_.cost_yaw_;
-    met.vio_perching_collision = violate_cost_.cost_perching_collision_;
-    met.vio_dist = violate_cost_.cost_dist_;
-
-    appendMetricsToCsv(met, "/home/lc/mc_simu_ws/traj_metrics.csv");
 
     // 计算优化后的时间步长和总时间
     //此时参数都经过优化器处理 tailS跟objectiveFunc函数最后一次输出的tails相同
@@ -714,21 +721,18 @@ namespace traj_opt
         {
           grad_p += grad_tmp;
           cost_inner += violate_cost_.cost_floor_;
-          //std::cout << "floor cost: " << violate_cost_.cost_floor_ << std::endl;
         }
 
         if (grad_cost_v(vel, grad_tmp, violate_cost_.cost_v_))
         {
           grad_v += grad_tmp;
           cost_inner += violate_cost_.cost_v_;
-          //std::cout << "v cost: " << violate_cost_.cost_v_ << std::endl;
         }
 
         if (grad_cost_thrust(acc, grad_tmp, violate_cost_.cost_thrust_))
         {
           grad_a += grad_tmp;
           cost_inner += violate_cost_.cost_thrust_;
-        //std::cout << "thrust cost: " << violate_cost_.cost_thrust_ << std::endl;
         }
 
         if (grad_cost_omega(acc, jer, grad_tmp, grad_tmp2, violate_cost_.cost_omega_))
@@ -736,7 +740,6 @@ namespace traj_opt
           grad_a += grad_tmp;
           grad_j += grad_tmp2;
           cost_inner += violate_cost_.cost_omega_;
-          //std::cout << "omega cost: " << violate_cost_.cost_omega_ << std::endl;
         }
 
         if (grad_cost_omega_yaw(acc, jer, grad_tmp, grad_tmp2, violate_cost_.cost_yaw_))
@@ -744,8 +747,6 @@ namespace traj_opt
           grad_a += grad_tmp;
           grad_j += grad_tmp2;
           cost_inner += violate_cost_.cost_yaw_;
-          //std::cout << "yaw cost: " << violate_cost_.cost_yaw_ << std::endl;
-
         }
 
         double dur2now = (i + alpha) * mincoOpt_.t(1);
@@ -754,8 +755,7 @@ namespace traj_opt
         if (is_landing_ && grad_cost_dist(pos, car_p, grad_tmp, violate_cost_.cost_dist_))
         {
           grad_p += grad_tmp;
-          cost_inner += violate_cost_.cost_yaw_;
-          //std::cout << "dist cost: " << violate_cost_.cost_yaw_ << std::endl;
+          cost_inner += violate_cost_.cost_dist_;
         }
 
         if (is_landing_ && grad_cost_perching_collision(pos, acc, car_p,
@@ -765,10 +765,9 @@ namespace traj_opt
           grad_p += grad_tmp;
           grad_a += grad_tmp2;
           cost_inner += violate_cost_.cost_perching_collision_;
-          //std::cout << "collision cost: " << violate_cost_.cost_perching_collision_ << std::endl;
         }
         double grad_car_t = grad_tmp3.dot(car_v_);
-        
+
         gradViola_c = beta0 * grad_p.transpose();
         gradViola_t = grad_p.transpose() * vel;
         gradViola_c += beta1 * grad_v.transpose();
