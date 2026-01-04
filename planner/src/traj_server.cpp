@@ -118,9 +118,9 @@ bool exe_traj(const quadrotor_msgs::PolyTraj &trajMsg)
         p = traj.getPos(t);
         v = traj.getVel(t);
         a = traj.getAcc(t);
-        ROS_WARN("T,ID,%.2f,%d", t, trajMsg.traj_id);
-        ROS_WARN("P,%.2f,%.2f,%.2f", p.x(), p.y(), p.z());
-        ROS_WARN("V,%.2f,%.2f,%.2f", v.x(), v.y(), v.z());
+        // ROS_WARN("T,ID,%.2f,%d", t, trajMsg.traj_id);
+        // ROS_WARN("P,%.2f,%.2f,%.2f", p.x(), p.y(), p.z());
+        // ROS_WARN("V,%.2f,%.2f,%.2f", v.x(), v.y(), v.z());
 
         // NOTE yaw
         double yaw = trajMsg.yaw;
@@ -167,8 +167,6 @@ void polyTrajCallback(const quadrotor_msgs::PolyTrajConstPtr &msgPtr)
 
 void cmdCallback(const ros::TimerEvent &e)
 {   
-    static int count = 0;
-
     if (!receive_traj_)
     {
         return;
@@ -180,10 +178,6 @@ void cmdCallback(const ros::TimerEvent &e)
         publish_cmd(trajMsg_.traj_id, last_p_, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), 0, 0); // TODO yaw
         return;
     }
-    count ++;
-    if(count > 10000)
-        count = 0;
-    ROS_ERROR("count t, %d,%d", count, trajMsg_.traj_id);
     if (exe_traj(trajMsg_))
     {
         trajMsg_last_ = trajMsg_;

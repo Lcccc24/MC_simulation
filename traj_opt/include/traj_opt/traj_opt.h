@@ -20,19 +20,15 @@ namespace traj_opt
         // # pieces and # key points
         int N_, K_, dim_t_, dim_p_;
         // weight for time regularization term
-        double rhoT_, rhoVt_;
+        double rhoT_;
         // collision avoiding and dynamics paramters
-        double vmax_, amax_;
-        double rhoP_, rhoD_, rhoV_, rhoA_;
-        double rhoThrust_, rhoOmega_;
-        double rhoPerchingCollision_;
-        // landing parameters
-        double v_plus_, robot_l_, robot_r_, platform_r_;
+        double vmax_, amax_, jmax_;
+        double rhoP_, rhoV_, rhoA_, rhoJ_;
+        double rhoOmega_;
         // SE3 dynamic limitation parameters
-        double thrust_max_, thrust_min_;
         double omega_max_, omega_yaw_max_;
         // MINCO Optimizer
-        minco::MINCO_S4_Uniform mincoOpt_;
+        minco::MINCO_S4 mincoOpt_;
         Eigen::MatrixXd initS_;
         // duration of each piece of the trajectory
         Eigen::VectorXd t_;
@@ -43,13 +39,10 @@ namespace traj_opt
         std::vector<double> tracking_thetas_;
 
         struct violate_cost {
-            double cost_floor_ = 0.0;
             double cost_v_ = 0.0;
-            double cost_thrust_ = 0.0;
+            double cost_a_ = 0.0;
+            double cost_j_ = 0.0;
             double cost_omega_ = 0.0;
-            double cost_yaw_ = 0.0;
-            double cost_perching_collision_ = 0.0;
-            double cost_dist_ = 0.0;
         };
 
         violate_cost violate_cost_;
@@ -71,42 +64,25 @@ namespace traj_opt
         //lc add
         bool trans_bvp_traj(Trajectory &traj);
 
-        bool feasibleCheck(Trajectory &traj);
-
         void addTimeIntPenalty(double &cost);
-        bool grad_cost_dist(const Eigen::Vector3d &p,
-                            const Eigen::Vector3d &car_p,
-                            Eigen::Vector3d &gradd,
-                            double &costd);
-        bool grad_cost_v(const Eigen::Vector3d &v,
+
+        bool feasibilityGradCostV(const Eigen::Vector3d &v,
                          Eigen::Vector3d &gradv,
                          double &costv);
-        bool grad_cost_thrust(const Eigen::Vector3d &a,
-                              Eigen::Vector3d &grada,
-                              double &costa);
+
+        bool feasibilityGradCostA(const Eigen::Vector3d &a,
+                         Eigen::Vector3d &grada,
+                         double &costa);
+
+        bool feasibilityGradCostJ(const Eigen::Vector3d &j,
+                         Eigen::Vector3d &gradj,
+                         double &costj);
+
         bool grad_cost_omega(const Eigen::Vector3d &a,
                              const Eigen::Vector3d &j,
                              Eigen::Vector3d &grada,
                              Eigen::Vector3d &gradj,
                              double &cost);
-        bool grad_cost_omega_yaw(const Eigen::Vector3d &a,
-                                 const Eigen::Vector3d &j,
-                                 Eigen::Vector3d &grada,
-                                 Eigen::Vector3d &gradj,
-                                 double &cost);
-        bool grad_cost_floor(const Eigen::Vector3d &p,
-                             Eigen::Vector3d &gradp,
-                             double &costp);
-        bool grad_cost_perching_collision(const Eigen::Vector3d &pos,
-                                          const Eigen::Vector3d &acc,
-                                          const Eigen::Vector3d &car_p,
-                                          Eigen::Vector3d &gradp,
-                                          Eigen::Vector3d &grada,
-                                          Eigen::Vector3d &grad_car_p,
-                                          double &cost);
-        bool check_collilsion(const Eigen::Vector3d &pos,
-                              const Eigen::Vector3d &acc,
-                              const Eigen::Vector3d &car_p);
     };
 
 } // namespace traj_opt

@@ -44,13 +44,10 @@ struct TrajMetrics {
   double z_drop_01s = 0.0;     // z(0)-z(0.1s)
 
   // optional: constraint violation counters
-  double vio_floor = 0.0;
   double vio_v = 0.0;
-  double vio_thrust = 0.0;
+  double vio_a = 0.0;
+  double vio_j = 0.0;
   double vio_omega = 0.0;
-  double vio_perching_collision = 0.0;
-  double vio_dist = 0.0;
-  double vio_yaw = 0.0;
 
 };
 
