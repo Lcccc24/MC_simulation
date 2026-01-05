@@ -24,9 +24,9 @@
         <param name="docking/descend_ver_bias" type="double" value="0.7" />
         <param name="docking/rec_hor_bias" type="double" value="0.2" />
         <param name="docking/rec_ver_bias" type="double" value="0.35" />
-        <param name="docking/final_hor_bias" type="double" value="0.05" />
-        <param name="docking/final_ver_bias" type="double" value="0.1" />
-        <param name="docking/z_control_dead" type="double" value="0.03" />
+        <param name="docking/final_hor_bias" type="double" value="0.1" />
+        <param name="docking/final_ver_bias" type="double" value="0.15" />
+        <param name="docking/z_control_dead" type="double" value="0.0" />
         <param name="docking/allowed_landing_time_s" type="double" value="300.0" />
         <param name="docking/allowed_final_landing_time_s" type="double" value="30.0" />
         <param name="docking/allowed_retry_hover_time_s" type="double" value="3.0" />
@@ -79,11 +79,17 @@
         <param name="traj_opt/jmax" value="20.0"/>
         <param name="traj_opt/omega_max" value="2.0"/>
         <param name="traj_opt/rhoT" value="10000.0"/>
-        <param name="traj_opt/rhoP" value="10000.0"/>
+        <param name="traj_opt/rhoP" value="100000.0"/>
         <param name="traj_opt/rhoV" value="100000.0"/>
         <param name="traj_opt/rhoA" value="1000.0"/>
         <param name="traj_opt/rhoJ" value="100.0"/>
-        <param name="traj_opt/rhoOmega" value="100000.0"/>
+        <param name="traj_opt/rhoD" value="100000.0"/>                                  
+        <param name="traj_opt/rhoOmega" value="10000.0"/>
+        <param name="traj_opt/rhoLV" value="100000.0"/>
+        <param name="traj_opt/LV_max" value="0.5"/>
+        <param name="traj_opt/LV_min" value="0.1"/>
+        <param name="traj_opt/emergency_stop_dist" value="1.0"/>
+        <param name="traj_opt/safe_aera_radius" value="0.2"/>
         <param name="traj_opt/pause_debug" value="false"/>
 
 

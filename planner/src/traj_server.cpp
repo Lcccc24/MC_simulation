@@ -156,7 +156,7 @@ void heartbeatCallback(const std_msgs::EmptyConstPtr &msg)
 
 void polyTrajCallback(const quadrotor_msgs::PolyTrajConstPtr &msgPtr)
 {
-    ROS_INFO("REC TRAJ");
+    //ROS_INFO("REC TRAJ");
     trajMsg_ = *msgPtr;
     if (!receive_traj_)
     {

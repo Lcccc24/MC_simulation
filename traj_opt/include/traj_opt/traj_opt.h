@@ -10,6 +10,14 @@
 namespace traj_opt
 {
 
+    struct LandingParams {
+        bool is_landing = false;
+        double land_x = 0.0;
+        double land_y = 0.0;
+        double land_z = 0.0;
+        double uwb_dist = 0.0;
+    };
+
     class TrajOpt
     {
     public:
@@ -24,7 +32,9 @@ namespace traj_opt
         // collision avoiding and dynamics paramters
         double vmax_, amax_, jmax_;
         double rhoP_, rhoV_, rhoA_, rhoJ_;
-        double rhoOmega_;
+        double rho_D_, rhoOmega_, rho_LV_;
+        double LV_max_, LV_min_;
+        double emergency_stop_dist_, safe_aera_radius_;
         // SE3 dynamic limitation parameters
         double omega_max_, omega_yaw_max_;
         // MINCO Optimizer
@@ -39,19 +49,28 @@ namespace traj_opt
         std::vector<double> tracking_thetas_;
 
         struct violate_cost {
+            double cost_p_ = 0.0;
             double cost_v_ = 0.0;
             double cost_a_ = 0.0;
             double cost_j_ = 0.0;
+            double cost_d_ = 0.0;
+            double cost_lv_ = 0.0;
             double cost_omega_ = 0.0;
         };
 
         violate_cost violate_cost_;
 
+        double land_target_x_ = 0.0;
+        double land_target_y_ = 0.0;
+        double land_target_z_ = 0.0;
+        double uwb_dist_ = 0.0;
+        
+
     public:
         TrajOpt(ros::NodeHandle &nh);
         ~TrajOpt() {}
 
-        void setLandingParams(const bool is_landing);
+        void setLandingParams(const LandingParams &lp);
         int optimize(const double &delta = 1e-4);
         bool generate_traj(const Eigen::MatrixXd &iniState,
                            const Eigen::Vector3d &car_p,
@@ -66,23 +85,23 @@ namespace traj_opt
 
         void addTimeIntPenalty(double &cost);
 
-        bool feasibilityGradCostV(const Eigen::Vector3d &v,
-                         Eigen::Vector3d &gradv,
-                         double &costv);
+        bool StrongWindAreaGradCostP(const Eigen::Vector3d &p, Eigen::Vector3d &gradp, double &costp);
 
-        bool feasibilityGradCostA(const Eigen::Vector3d &a,
-                         Eigen::Vector3d &grada,
-                         double &costa);
+        bool feasibilityGradCostV(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costv);
 
-        bool feasibilityGradCostJ(const Eigen::Vector3d &j,
-                         Eigen::Vector3d &gradj,
-                         double &costj);
+        bool feasibilityGradCostA(const Eigen::Vector3d &a, Eigen::Vector3d &grada, double &costa);
 
-        bool grad_cost_omega(const Eigen::Vector3d &a,
-                             const Eigen::Vector3d &j,
-                             Eigen::Vector3d &grada,
-                             Eigen::Vector3d &gradj,
-                             double &cost);
+        bool feasibilityGradCostJ(const Eigen::Vector3d &j, Eigen::Vector3d &gradj, double &costj);
+
+        bool feasibilityGradCostOmega(const Eigen::Vector3d &a, const Eigen::Vector3d &j, Eigen::Vector3d &grada, Eigen::Vector3d &gradj, double &cost);
+
+        bool EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd);
+
+        bool LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costlv);
+
+        double computeAllowedVmaxLV(double delta_z);
+
+        double computePenaltyWeightLV(double delta_z);       
     };
 
 } // namespace traj_opt

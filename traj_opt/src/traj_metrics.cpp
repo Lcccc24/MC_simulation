@@ -90,7 +90,7 @@ void appendMetricsToCsv(const TrajMetrics& m, const std::string& path)
            "int_acc2,int_jerk2,int_snap2,path_length,"
            "max_speed,max_acc,max_jerk,max_snap,max_omega,"
            "first_k_disp,z_drop_01s,"
-           "vio_v,vio_a,vio_j,vio_omega\n";
+           "vio_p,vio_v,vio_a,vio_j,vio_d,vio_omega,vio_lv\n";
   }
 
   ofs << m.method << "," << m.scene_id << ","
@@ -100,7 +100,7 @@ void appendMetricsToCsv(const TrajMetrics& m, const std::string& path)
       << m.int_acc2 << "," << m.int_jerk2 << "," << m.int_snap2 << "," << m.path_length << ","
       << m.max_speed << "," << m.max_acc << "," << m.max_jerk << "," << m.max_snap << "," << m.max_omega << ","
       << m.first_k_disp << "," << m.z_drop_01s << ","
-      << m.vio_v << "," << m.vio_a << "," << m.vio_j << "," << m.vio_omega
+      << m.vio_p << "," << m.vio_v << "," << m.vio_a << "," << m.vio_j << "," << m.vio_d << "," << m.vio_omega << "," << m.vio_lv
       << "\n";
 }
 

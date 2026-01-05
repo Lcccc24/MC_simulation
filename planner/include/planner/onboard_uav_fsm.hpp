@@ -313,4 +313,6 @@ private:
     Eigen::Vector2d circle_search_target = Eigen::Vector2d(0.0, 0.0);   
     bool search_flag = false;
 
+    traj_opt::LandingParams land_params_;
+    void FillLandingParams();
 };

@@ -478,216 +478,209 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
         return;
     }
 
+    FillLandingParams();
+    traj_opt_ptr_->setLandingParams(land_params_);
+                             
     switch (onboard_uav_state_)
     {
-    case OnboardUavStates::IDLE:
-    {
-        // 当接收到母机的起飞指令时，进入起飞状态
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::TAKEOFF))
-        // if ((OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::TAKEOFF)) || uav_state_.armed)
+        case OnboardUavStates::IDLE:
         {
-            hover_flag_ = false;
-            onboard_uav_param_.real_takeoff_height = onboard_uav_param_.takeoff_height + uav_odom_pos_.z();
-            onboard_uav_state_ = OnboardUavStates::TAKEOFF;
-            ROS_INFO("\033[32mIDLE: Switch to TAKEOFF\033[0m");
-        }
-        break;
-    }
-    case OnboardUavStates::TAKEOFF:
-    {
-        // TODO 出现故障时，进入故障保护状态
-
-        // 当接收到母机的任务指令时，进入任务状态
-        if ((OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::MISSION)))
-        {
-            is_first_run_ = true;
-            onboard_uav_state_ = OnboardUavStates::MISSION;
-            ROS_INFO("\033[32mTAKEOFF: Switch to MISSION\033[0m");
-            break;
-        }
-        // 当接收到母机的降落指令时，进入降落状态
-        else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
-        {
-            onboard_uav_state_ = OnboardUavStates::LAND;
-            ROS_INFO("\033[32mDOCKING: Switch to LAND\033[0m");
-            break;
-        }
-
-        // 起飞完成后发送 Onboard::TAKEOFF_COMPLETE ，等待下一步指令
-        if (uav_odom_pos_.z() >= onboard_uav_param_.real_takeoff_height - 0.3)
-        {
-            //onboard_published_.flight_command = quadrotor_msgs::Onboard::TAKEOFF;
-            onboard_published_.flight_status = quadrotor_msgs::Onboard::TAKEOFF_COMPLETE;
-            PubOnboardMsg();
-            // 发布悬停
-            if (!hover_flag_)
+            // 当接收到母机的起飞指令时，进入起飞状态
+            if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::TAKEOFF))
+            // if ((OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::TAKEOFF)) || uav_state_.armed)
             {
-                // target_pos_ = uav_odom_pos_;
-                // target_pos_.z() += 0.1;
-                hover_flag_ = true;
-                // PubHoverPos();
-                ROS_INFO("TAKEOFF COMPLETE: Hover");
+                hover_flag_ = false;
+                onboard_uav_param_.real_takeoff_height = onboard_uav_param_.takeoff_height + uav_odom_pos_.z();
+                onboard_uav_state_ = OnboardUavStates::TAKEOFF;
+                ROS_INFO("\033[32mIDLE: Switch to TAKEOFF\033[0m");
+            }
+            break;
+        }
+        case OnboardUavStates::TAKEOFF:
+        {
+            // TODO 出现故障时，进入故障保护状态
+
+            // 当接收到母机的任务指令时，进入任务状态
+            if ((OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::MISSION)))
+            {
+                is_first_run_ = true;
+                onboard_uav_state_ = OnboardUavStates::MISSION;
+                ROS_INFO("\033[32mTAKEOFF: Switch to MISSION\033[0m");
+                break;
+            }
+            // 当接收到母机的降落指令时，进入降落状态
+            else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
+            {
+                onboard_uav_state_ = OnboardUavStates::LAND;
+                ROS_INFO("\033[32mDOCKING: Switch to LAND\033[0m");
+                break;
+            }
+
+            // 起飞完成后发送 Onboard::TAKEOFF_COMPLETE ，等待下一步指令
+            if (uav_odom_pos_.z() >= onboard_uav_param_.real_takeoff_height - 0.3)
+            {
+                //onboard_published_.flight_command = quadrotor_msgs::Onboard::TAKEOFF;
+                onboard_published_.flight_status = quadrotor_msgs::Onboard::TAKEOFF_COMPLETE;
+                PubOnboardMsg();
+                // 发布悬停
+                if (!hover_flag_)
+                {
+                    // target_pos_ = uav_odom_pos_;
+                    // target_pos_.z() += 0.1;
+                    hover_flag_ = true;
+                    // PubHoverPos();
+                    ROS_INFO("TAKEOFF COMPLETE: Hover");
+                }
+                break;
+            }
+
+            // 发布起飞指令
+            if (!uav_state_.armed && uav_state_.mode != "OFFBOARD")
+            {
+                quadrotor_msgs::TakeoffLand takeoff_land_cmd;
+                takeoff_land_cmd.takeoff_land_cmd = quadrotor_msgs::TakeoffLand::TAKEOFF;
+                takeoff_land_cmd_pub_.publish(takeoff_land_cmd);
             }
             break;
         }
 
-        // 发布起飞指令
-        if (!uav_state_.armed && uav_state_.mode != "OFFBOARD")
+        case OnboardUavStates::MISSION:
         {
-            quadrotor_msgs::TakeoffLand takeoff_land_cmd;
-            takeoff_land_cmd.takeoff_land_cmd = quadrotor_msgs::TakeoffLand::TAKEOFF;
-            takeoff_land_cmd_pub_.publish(takeoff_land_cmd);
-        }
-        break;
-    }
+            if (uav_state_.mode != "OFFBOARD")
+            {
+                break;
+            }
 
-    case OnboardUavStates::MISSION:
-    {
-        if (uav_state_.mode != "OFFBOARD")
-        {
+            // 当接收到母机的远程引导指令时，进入引导返回状态
+            if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::REMOTE_GUIDE))
+            {
+                onboard_uav_state_ = OnboardUavStates::REMOTE_GUIDE;
+                ROS_INFO("\033[32mMISSION: Switch to REMOTE_GUIDANCE\033[0m");
+                break;
+            }
+            // 当接收到母机的降落指令时，进入降落状态
+            else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
+            {
+                onboard_uav_state_ = OnboardUavStates::LAND;
+                ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
+                break;
+            }
+
+            RunMissionMode();
+            //Remote_Guidance();
             break;
         }
 
-        // 当接收到母机的远程引导指令时，进入引导返回状态
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::REMOTE_GUIDE))
+        case OnboardUavStates::REMOTE_GUIDE:
         {
-            onboard_uav_state_ = OnboardUavStates::REMOTE_GUIDE;
-            ROS_INFO("\033[32mMISSION: Switch to REMOTE_GUIDANCE\033[0m");
-            break;
-        }
-        // 当接收到母机的降落指令时，进入降落状态
-        else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
-        {
-            onboard_uav_state_ = OnboardUavStates::LAND;
-            ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
-            break;
-        }
+            // 当接收到母机的盘旋指令时，进入盘旋状态
+            if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::SEARCH))
+            {
+                onboard_uav_state_ = OnboardUavStates::SEARCH;
+                ROS_INFO("\033[32mMISSION: Switch to SEARCH\033[0m");
+                break;
+            }
+            // 当接收到母机的盘旋指令时，进入盘旋状态
+            if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
+            {
+                docking_state_ = DockingStates::INIT;
+                onboard_uav_state_ = OnboardUavStates::DOCKING;
+                ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
+                break;
+            }
+            // 当接收到母机的降落指令时，进入降落状态
+            else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
+            {
+                onboard_uav_state_ = OnboardUavStates::LAND;
+                ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
+                break;
+            }
 
-        RunMissionMode();
-        //Remote_Guidance();
-        break;
-    }
-
-    case OnboardUavStates::REMOTE_GUIDE:
-    {
-        // 当接收到母机的盘旋指令时，进入盘旋状态
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::SEARCH))
-        {
-            onboard_uav_state_ = OnboardUavStates::SEARCH;
-            ROS_INFO("\033[32mMISSION: Switch to SEARCH\033[0m");
-            break;
-        }
-        // 当接收到母机的盘旋指令时，进入盘旋状态
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
-        {
-            docking_state_ = DockingStates::INIT;
-            onboard_uav_state_ = OnboardUavStates::DOCKING;
-            ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
-            break;
-        }
-        // 当接收到母机的降落指令时，进入降落状态
-        else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
-        {
-            onboard_uav_state_ = OnboardUavStates::LAND;
-            ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
+            Remote_Guidance();
             break;
         }
 
-        Remote_Guidance();
-        break;
-    }
-
-    case OnboardUavStates::SEARCH:
-    {
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
+        case OnboardUavStates::SEARCH:
         {
-            docking_state_ = DockingStates::INIT;
-            onboard_uav_state_ = OnboardUavStates::DOCKING;
-            ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
-            break;
-        }
-        // 当接收到母机的降落指令时，进入降落状态
-        else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
-        {
-            onboard_uav_state_ = OnboardUavStates::LAND;
-            ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
-            break;
-        }
+            if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::DOCKING))
+            {
+                docking_state_ = DockingStates::INIT;
+                onboard_uav_state_ = OnboardUavStates::DOCKING;
+                ROS_INFO("\033[32mMISSION: Switch to DOCKING\033[0m");
+                break;
+            }
+            // 当接收到母机的降落指令时，进入降落状态
+            else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
+            {
+                onboard_uav_state_ = OnboardUavStates::LAND;
+                ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
+                break;
+            }
 
-        Run_Search();
-        break;
-    }
-
-    case OnboardUavStates::DOCKING:
-    {
-        // TODO disarmed后需要发布状态给母机
-        // if (uav_state_.mode != "OFFBOARD")
-        // {
-        //     break;
-        // }
-
-        // 出现故障时，进入故障保护状态
-
-        // 当接收到母机的任务指令时，进入任务状态
-        if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::MISSION))
-        {
-            traj_opt_ptr_->setLandingParams(false);
-            is_first_run_ = true;
-            onboard_uav_state_ = OnboardUavStates::MISSION;
-            ROS_INFO("\033[32mDOCKING: Switch to MISSION\033[0m");
-            break;
-        }
-        // 当接收到母机的降落指令时，进入降落状态
-        else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
-        {
-            traj_opt_ptr_->setLandingParams(false);
-            onboard_uav_state_ = OnboardUavStates::LAND;
-            ROS_INFO("\033[32mDOCKING: Switch to LAND\033[0m");
+            Run_Search();
             break;
         }
 
-        RunDockingMode();
-        break;
-    }
-
-    case OnboardUavStates::LAND:
-    {
-        // 通过 AUTO_LAND 进行降落
-        static int fsm_count_land = 0;
-        if (fsm_count_land++ > 0.6 * fsm_hz_)
+        case OnboardUavStates::DOCKING:
         {
-            quadrotor_msgs::TakeoffLand takeoff_land_cmd;
-            takeoff_land_cmd.takeoff_land_cmd = quadrotor_msgs::TakeoffLand::LAND;
-            takeoff_land_cmd_pub_.publish(takeoff_land_cmd);
-            fsm_count_land = 0;
+            // 当接收到母机的任务指令时，进入任务状态 没用到
+            if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::MISSION))
+            {
+                is_first_run_ = true;
+                onboard_uav_state_ = OnboardUavStates::MISSION;
+                ROS_INFO("\033[32mDOCKING: Switch to MISSION\033[0m");
+                break;
+            }
+            // 当接收到母机的降落指令时，进入降落状态 没用到
+            else if (OnboardMsgIsReceived(now_time) && IsOnboardCommand(quadrotor_msgs::Onboard::LAND))
+            {
+                onboard_uav_state_ = OnboardUavStates::LAND;
+                ROS_INFO("\033[32mDOCKING: Switch to LAND\033[0m");
+                break;
+            }
+
+            RunDockingMode();
+            break;
         }
 
-        // 降落完成后发送 Onboard::LAND_COMPLETE
-        if (!uav_state_.armed)
+        case OnboardUavStates::LAND:
         {
-            //onboard_published_.flight_command = quadrotor_msgs::Onboard::LAND;
-            onboard_published_.flight_status = quadrotor_msgs::Onboard::LAND_COMPLETE;
-            PubOnboardMsg();
-            onboard_uav_state_ = OnboardUavStates::IDLE; // TODO bug
-        }
-        break;
-    }
+            // 通过 AUTO_LAND 进行降落
+            static int fsm_count_land = 0;
+            if (fsm_count_land++ > 0.6 * fsm_hz_)
+            {
+                quadrotor_msgs::TakeoffLand takeoff_land_cmd;
+                takeoff_land_cmd.takeoff_land_cmd = quadrotor_msgs::TakeoffLand::LAND;
+                takeoff_land_cmd_pub_.publish(takeoff_land_cmd);
+                fsm_count_land = 0;
+            }
 
-    case OnboardUavStates::FAIL_SAFE:
-    {
-        // 就地悬停
-        static bool execute_once_flag = false;
-        if (!execute_once_flag)
+            // 降落完成后发送 Onboard::LAND_COMPLETE
+            if (!uav_state_.armed)
+            {
+                //onboard_published_.flight_command = quadrotor_msgs::Onboard::LAND;
+                onboard_published_.flight_status = quadrotor_msgs::Onboard::LAND_COMPLETE;
+                PubOnboardMsg();
+                onboard_uav_state_ = OnboardUavStates::IDLE; // TODO bug
+            }
+            break;
+        }
+
+        case OnboardUavStates::FAIL_SAFE:
         {
-            target_pos_ = uav_odom_pos_;
-            PubHoverPos();
-            execute_once_flag = true;
+            // 就地悬停
+            static bool execute_once_flag = false;
+            if (!execute_once_flag)
+            {
+                target_pos_ = uav_odom_pos_;
+                PubHoverPos();
+                execute_once_flag = true;
+            }
+            break;
         }
-        break;
-    }
 
-    default:
-        break;
+        default:
+            break;
     }
 
     // update timer
@@ -1219,42 +1212,37 @@ void OnboardUavFsm::RunDockingMode()
 {
     switch (docking_state_)
     {
-    case DockingStates::INIT:
-    {
-        RunDockingIdle();
-        break;
-    }
+        case DockingStates::INIT:
+        {
+            RunDockingIdle();
+            break;
+        }
 
-    case DockingStates::RETURN:
-    {
-        RunDockingReturn();
-        break;
-    }
+        case DockingStates::RETURN:
+        {
+            RunDockingReturn();
+            break;
+        }
 
-    case DockingStates::LANDING:
-    {   
-        // 当标签不可见，且不是 FINAL_LANDING 时，进入重试状态
-        // 当降落超时时，进入故障保护状态
-        traj_opt_ptr_->setLandingParams(true);
-        RunDockingLanding();
-        break;
-    }
+        case DockingStates::LANDING:
+        {   
+            RunDockingLanding();
+            break;
+        }
 
-    case DockingStates::COMPLETE:
-    {
-        // 关闭电机
-        RunDockingComplete();
-        break;
-    }
-    case DockingStates::RETRY:
-    {
-        // 当处于 HOVER_SEARCH 状态，且标签可见时，进入降落状态
-        RunDockingRetry();
-        break;
-    }
+        case DockingStates::COMPLETE:
+        {
+            RunDockingComplete();
+            break;
+        }
+        case DockingStates::RETRY:
+        {
+            RunDockingRetry();
+            break;
+        }
 
-    default:
-        break;
+        default:
+            break;
     }
     return;
 }
@@ -1391,18 +1379,20 @@ void OnboardUavFsm::RunDockingReturn()
  */
 void OnboardUavFsm::RunDockingLanding()
 {
-    // 当标签不可见，且不是 FINAL_LANDING 时，进入重试状态
-    // TODO FINAL_LANDING需要限制时间，超时进入重试状态
-    //if (!LandingTargetPoseIsReceived(ros::Time::now()) && landing_state_ != LandingStates::FINAL_LANDING)
-    is_landing_ = true;
     if (!LandingTargetPoseIsReceived(ros::Time::now()) )
     {
-        traj_opt_ptr_->setLandingParams(false);
         retry_state_ = RetryStates::INIT;
         docking_state_ = DockingStates::RETRY;
         ROS_WARN("DOCKING_LANDING: Landing target lost! Switch to RETRY");
+        is_landing_ = false;
+        FillLandingParams();
+        traj_opt_ptr_->setLandingParams(land_params_);
         return;
     }
+
+    is_landing_ = true;
+    FillLandingParams();
+    traj_opt_ptr_->setLandingParams(land_params_);
 
     // 计算无人机与标签的水平距离
     static Eigen::Vector3d relative_pos = Eigen::Vector3d::Zero();
@@ -1476,7 +1466,7 @@ void OnboardUavFsm::RunDockingLanding()
         {
             is_replan_ = false;
             // 打印目标位姿
-            ROS_INFO("des:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
+            //ROS_INFO("des:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
         }
         
         break;
@@ -1516,7 +1506,7 @@ void OnboardUavFsm::RunDockingLanding()
         {
             is_replan_ = false;
             // 打印目标位姿
-            ROS_INFO("re:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
+            //ROS_INFO("re:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
         }
 
         break;
@@ -1592,7 +1582,7 @@ void OnboardUavFsm::RunDockingLanding()
         {
             is_replan_ = false;
             // 打印目标位姿
-            ROS_INFO("fin:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
+            // ROS_INFO("fin:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
         }
 
         break;
@@ -1613,7 +1603,7 @@ void OnboardUavFsm::RunDockingComplete()
     if (uav_state_.armed == false)
     {
         perform_uav_disarm_ = false;
-        ROS_INFO("\033[32mDOCKING_COMPLETE: Docking complete! UAV disarmed!\033[0m");
+        ROS_WARN("\033[32mDOCKING_COMPLETE: Docking complete! UAV disarmed!\033[0m");
         onboard_uav_state_ = OnboardUavStates::IDLE;
     }
     else
@@ -1734,7 +1724,17 @@ void OnboardUavFsm::RunDockingRetry()
     return;
 }
 
-bool OnboardUavFsm:: PlanTrajectory()
+void OnboardUavFsm::FillLandingParams() {
+    land_params_.is_landing = is_landing_;
+    land_params_.uwb_dist = uwb_distance;
+    if (is_landing_) {
+        land_params_.land_x = landing_target_pose_.pose.position.x;
+        land_params_.land_y = landing_target_pose_.pose.position.y;
+        land_params_.land_z = landing_target_pose_.pose.position.z;
+    }
+}
+
+bool OnboardUavFsm::PlanTrajectory()
 {
     int N = is_landing_ ? landing_minco_piece_ : normal_minco_piece_;
 

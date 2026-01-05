@@ -16,22 +16,14 @@ namespace traj_opt
 
   static int iter_times_;
 
-  //归一化函数，将向量归一化到单位长度
-  static Eigen::Vector3d f_N(const Eigen::Vector3d &x)
-  {
-    return x.normalized();
-  }
-
-  //归一化函数的导数
+  //推力方向导数
   static Eigen::MatrixXd f_DN(const Eigen::Vector3d &x)
   {
     double x_norm_2 = x.squaredNorm();
     return (Eigen::MatrixXd::Identity(3, 3) - x * x.transpose() / x_norm_2) / sqrt(x_norm_2);
   }
 
-  //归一化函数的二阶导数 
-  //两个传入参数x和y，返回的是雅克比矩阵???
-  //？？？？？？？？？？？？？？？？？？？
+  //推力方向导数
   static Eigen::MatrixXd f_D2N(const Eigen::Vector3d &x, const Eigen::Vector3d &y)
   {
     double x_norm_2 = x.squaredNorm();
@@ -306,17 +298,13 @@ namespace traj_opt
 /**
  * @brief set landing parameters
 */
-  void TrajOpt::setLandingParams(const bool is_landing)
-  {
-    is_landing_ = is_landing;
-    if (is_landing)
-    {
-      vmax_ = 0.4;
-      amax_ = 1.5;
-      jmax_ = 8.0;
-      omega_max_ = 1.0;
-      rhoV_ = 100000.0;
-      rhoT_ = 10000.0;
+  void TrajOpt::setLandingParams(const LandingParams &lp) {
+    is_landing_ = lp.is_landing;
+    uwb_dist_ = lp.uwb_dist;
+    if (is_landing_) {
+      land_target_x_ = lp.land_x;
+      land_target_y_ = lp.land_y;
+      land_target_z_ = lp.land_z;
     }
   }
 
@@ -428,7 +416,7 @@ namespace traj_opt
       }
       //t_bvp / N_：平均每段轨迹的时间
       Dur_T.setConstant(t_bvp / N_);
-      std::cout  << "Init Dur_T: " << Dur_T.transpose() << std::endl;
+      //std::cout  << "Init Dur_T: " << Dur_T.transpose() << std::endl;
       RealT2VirtualT(Dur_T, Virtual_T);
     }
 
@@ -466,7 +454,7 @@ namespace traj_opt
     auto toc = std::chrono::steady_clock::now();
 
     if(opt_ret>=0) {
-      std::cout << "\033[32m>ret: " << opt_ret << "\033[0m" << std::endl;
+      // std::cout << "\033[32m>ret: " << opt_ret << "\033[0m" << std::endl;
     } else {
       auto err_msg = lbfgs::lbfgs_strerror(opt_ret);
       std::cout << "\033[31m>traj opt err: " << err_msg << "\033[0m" << std::endl;
@@ -497,7 +485,7 @@ namespace traj_opt
     tailS.col(3).setZero();
     mincoOpt_.generate(initS_, tailS, P, Dur_T);
     traj = mincoOpt_.getTraj();
-    std::cout  << "Optimal Dur_T: " << Dur_T.transpose() << std::endl;
+    //std::cout  << "Optimal Dur_T: " << Dur_T.transpose() << std::endl;
 
     TrajMetrics met = evaluateTrajectory(traj, N_, is_landing_, 0.01 /*100Hz*/, 5);
     met.success = (opt_ret >= 0);
@@ -510,8 +498,8 @@ namespace traj_opt
     // met.scene_id = scene_id;           // 如果你有场景编号就填上
     met.vio_v = violate_cost_.cost_v_;
     met.vio_omega = violate_cost_.cost_omega_;
-    std::cout << "v cost: " << violate_cost_.cost_v_ << std::endl;     
-    std::cout << "omega cost: " << violate_cost_.cost_omega_ << std::endl;
+    //std::cout << "v cost: " << violate_cost_.cost_v_ << std::endl;     
+    //std::cout << "omega cost: " << violate_cost_.cost_omega_ << std::endl;
 
     appendMetricsToCsv(met, "/home/lc/mc_simu_ws/traj_metrics.csv");
     init_traj_ = traj;
@@ -562,8 +550,7 @@ namespace traj_opt
  
         omg = (j == 0 || j == K_) ? 0.5 : 1.0;
 
-        if (feasibilityGradCostV(vel, gradv, violate_cost_.cost_v_))
-        {
+        if (!is_landing_ && feasibilityGradCostV(vel, gradv, violate_cost_.cost_v_)) {
           gradViolaVc = beta1 * gradv.transpose();
           gradViolaVt = alpha * gradv.transpose() * acc;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaVc;
@@ -571,8 +558,7 @@ namespace traj_opt
           cost_inner += omg * step * violate_cost_.cost_v_;
         }
 
-        if (feasibilityGradCostA(acc, grada, violate_cost_.cost_a_))
-        {
+        if (feasibilityGradCostA(acc, grada, violate_cost_.cost_a_)) {
           gradViolaAc = beta2 * grada.transpose();
           gradViolaAt = alpha * grada.transpose() * jer;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaAc;
@@ -580,8 +566,7 @@ namespace traj_opt
           cost_inner += omg * step * violate_cost_.cost_a_;
         }
 
-        if (feasibilityGradCostJ(jer, gradj, violate_cost_.cost_j_))
-        {
+        if (feasibilityGradCostJ(jer, gradj, violate_cost_.cost_j_)) {
           gradViolaJc = beta3 * gradj.transpose();
           gradViolaJt = alpha * gradj.transpose() * snp;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaJc;
@@ -589,8 +574,7 @@ namespace traj_opt
           cost_inner += omg * step * violate_cost_.cost_j_;
         }
 
-        if (grad_cost_omega(acc, jer, grada, gradj, violate_cost_.cost_omega_))
-        {
+        if (feasibilityGradCostOmega(acc, jer, grada, gradj, violate_cost_.cost_omega_)) {
           gradViolaAc = beta2 * grada.transpose();
           gradViolaJc = beta3 * gradj.transpose();
           gradViolaAt = alpha * grada.transpose() * jer;
@@ -598,6 +582,30 @@ namespace traj_opt
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * (gradViolaAc + gradViolaJc);
           mincoOpt_.gdT(i) += omg * (violate_cost_.cost_omega_ / K_ + step * (gradViolaAt + gradViolaJt));
           cost_inner += omg * step * violate_cost_.cost_omega_;
+        }
+
+        if (EmerDistGradCostD(vel, gradv, violate_cost_.cost_d_)) {
+          gradViolaVc = beta1 * gradv.transpose();
+          gradViolaVt = alpha * gradv.transpose() * acc;
+          mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaVc;
+          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_d_ / K_ + step * gradViolaVt);
+          cost_inner += omg * step * violate_cost_.cost_d_;
+        }
+
+        if (is_landing_ && StrongWindAreaGradCostP(pos, gradp, violate_cost_.cost_p_)) {
+          gradViolaPc = beta0 * gradp.transpose();
+          gradViolaPt = alpha * gradp.transpose() * vel;
+          mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaPc;
+          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_p_ / K_ + step * gradViolaPt);
+          cost_inner += omg * step * violate_cost_.cost_p_;
+        }
+
+        if (is_landing_ && LandSmoothGradCost(pos, vel, gradv, violate_cost_.cost_lv_)) {
+          gradViolaVc = beta1 * gradv.transpose();
+          gradViolaVt = alpha * gradv.transpose() * acc;
+          mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaVc;
+          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_lv_ / K_ + step * gradViolaVt);
+          cost_inner += omg * step * violate_cost_.cost_lv_;
         }
 
         s1 += step;
@@ -622,16 +630,45 @@ namespace traj_opt
     nh.param("traj_opt/rhoV", rhoV_, 1000.0);
     nh.param("traj_opt/rhoA", rhoA_, 1000.0);
     nh.param("traj_opt/rhoJ", rhoJ_, 1000.0);
+    nh.param("traj_opt/rhoD", rho_D_, 100000.0);
     nh.param("traj_opt/rhoOmega", rhoOmega_, 100000.0);
+    nh.param("traj_opt/rhoLV", rho_LV_, 100000.0);
+    nh.param("traj_opt/LV_max", LV_max_, 0.5);
+    nh.param("traj_opt/LV_min", LV_min_, 0.1);
+    nh.param("traj_opt/emergency_stop_dist", emergency_stop_dist_, 1.0);
+    nh.param("traj_opt/safe_aera_radius", safe_aera_radius_, 0.2);
     nh.param("traj_opt/pause_debug", pause_debug_, false);
     visPtr_ = std::make_shared<vis_utils::VisUtils>(nh);
   }
 
-  bool TrajOpt::feasibilityGradCostV(const Eigen::Vector3d &v,
-                            Eigen::Vector3d &gradv,
-                            double &costv)
-  {
-    //constexpr double mu = 0.01;
+  bool TrajOpt::StrongWindAreaGradCostP(const Eigen::Vector3d &p, Eigen::Vector3d &gradp, double &costp) {
+    constexpr double mu = 0.01;
+    double ppenx = std::fabs(p.x() - land_target_x_) - safe_aera_radius_;
+    double ppeny = std::fabs(p.y() - land_target_y_) - safe_aera_radius_;
+
+    if (ppenx < 0 && ppeny < 0) {
+      gradp.setZero();
+      costp = 0.0;
+      return false;
+    }
+
+    if (ppenx > 0) {
+      double dx = 0.0;
+      costp += rhoP_ * smoothedL1(ppenx, mu, dx);
+      gradp.x() = rhoP_ * dx;
+    }
+
+    if (ppeny > 0) {
+      double dy = 0.0;
+      costp += rhoP_ * smoothedL1(ppeny, mu, dy);
+      gradp.y() = rhoP_ * dy;
+    }
+
+    return true;
+  }
+
+  bool TrajOpt::feasibilityGradCostV(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costv) {
+    constexpr double mu = 0.01;
     double vpen = v.squaredNorm() - vmax_ * vmax_;
 
     if (vpen  < 0) {
@@ -640,20 +677,17 @@ namespace traj_opt
       return false;
     }
 
-    // double d = 0.0;
-    // costv = rhoV_ * smoothedL1(vpen, mu, d);
-    // gradv = rhoV_ * (2 * d) * v;
-    // return true;
-    gradv = rhoV_ * 6 * vpen * vpen * v;
-    costv = rhoV_ * vpen * vpen * vpen;
+    double d = 0.0;
+    costv = rhoV_ * smoothedL1(vpen, mu, d);
+    gradv = rhoV_ * 2 * d * v;
     return true;
+    // gradv = rhoV_ * 6 * vpen * vpen * v;
+    // costv = rhoV_ * vpen * vpen * vpen;
+    // return true;
   }
 
-  bool TrajOpt::feasibilityGradCostA(const Eigen::Vector3d &a,
-                            Eigen::Vector3d &grada,
-                            double &costa)
-  {
-    //constexpr double mu = 0.01;
+  bool TrajOpt::feasibilityGradCostA(const Eigen::Vector3d &a, Eigen::Vector3d &grada, double &costa) {
+    constexpr double mu = 0.01;
     double apen = a.squaredNorm() - amax_ * amax_;
 
     if (apen  < 0) {
@@ -662,20 +696,17 @@ namespace traj_opt
       return false;
     }
 
-    // double d = 0.0;
-    // costa = rhoA_ * smoothedL1(apen, mu, d);
-    // grada = rhoA_ * (2 * d) * a;
-    // return true;
-    grada = rhoA_ * 6 * apen * apen * a;
-    costa = rhoA_ * apen * apen * apen;
+    double d = 0.0;
+    costa = rhoA_ * smoothedL1(apen, mu, d);
+    grada = rhoA_ * 2 * d * a;
     return true;
+    // grada = rhoA_ * 6 * apen * apen * a;
+    // costa = rhoA_ * apen * apen * apen;
+    // return true;
   }
 
-  bool TrajOpt::feasibilityGradCostJ(const Eigen::Vector3d &j,
-                            Eigen::Vector3d &gradj,
-                            double &costj)
-  {
-    //constexpr double mu = 0.01;
+  bool TrajOpt::feasibilityGradCostJ(const Eigen::Vector3d &j, Eigen::Vector3d &gradj, double &costj) {
+    constexpr double mu = 0.01;
     double jpen = j.squaredNorm() - jmax_ * jmax_;
 
     if (jpen  < 0) {
@@ -684,13 +715,13 @@ namespace traj_opt
       return false;
     }
 
-    // double d = 0.0;
-    // costj = rhoJ_ * smoothedL1(jpen, mu, d);
-    // gradj = rhoJ_ * (2 * d) * j;
-    // return true;
-    gradj = rhoJ_ * 6 * jpen * jpen * j;
-    costj = rhoJ_ * jpen * jpen * jpen;
+    double d = 0.0;
+    costj = rhoJ_ * smoothedL1(jpen, mu, d);
+    gradj = rhoJ_ * 2 * d * j;
     return true;
+    // gradj = rhoJ_ * 6 * jpen * jpen * j;
+    // costj = rhoJ_ * jpen * jpen * jpen;
+    // return true;
   }
 
 
@@ -701,46 +732,85 @@ namespace traj_opt
   // \omega_3 = (b \dot{a} - a \dot(b)) / (1+c)
   // || \omega_12 ||^2 = \omega_1^2 + \omega_2^2 = \dot{a}^2 + \dot{b}^2 + \dot{c}^2
   //hopf 纤维化
-
-  bool TrajOpt::grad_cost_omega(const Eigen::Vector3d &a,
-                                const Eigen::Vector3d &j,
-                                Eigen::Vector3d &grada,
-                                Eigen::Vector3d &gradj,
-                                double &cost)
-  {
-    // thrust_f = vdot - g_; 
-    //important??????
-    //求机体z轴导数 再通过hopf纤维化得到机体角速度
+  bool TrajOpt::feasibilityGradCostOmega(const Eigen::Vector3d &a, const Eigen::Vector3d &j, Eigen::Vector3d &grada, Eigen::Vector3d &gradj, double &cost) {
+    constexpr double mu = 0.01;
     Eigen::Vector3d thrust_f = a - g_;
-    //链式求导 归一化函数求导后内部求导 内部求导即得到vdotdot即jerk
-    //此处不考虑空气阻力，参考wangzhepei 考虑风阻的微分平坦
     Eigen::Vector3d zb_dot = f_DN(thrust_f) * j;
-    //\omega_12 ||^2 = \omega_1^2 + \omega_2^2 = \dot{a}^2 + \dot{b}^2 + \dot{c}^2
     double omega_12_sq = zb_dot.squaredNorm();
-    double pen = omega_12_sq - omega_max_ * omega_max_;
-    if (pen > 0)
-    {
-      double grad = 0;
-      static double mu = 0.01;
-      cost = smoothedL1(pen, mu, grad);
+    double open = omega_12_sq - omega_max_ * omega_max_;
 
-      Eigen::Vector3d grad_zb_dot = 2 * zb_dot;
-      // std::cout << "grad_zb_dot: " << grad_zb_dot.transpose() << std::endl;
-      //链式求导 gradj = rhoOmega_ * grad * 2 * zb_dot * f_DN(thrust_f)
-      gradj = f_DN(thrust_f).transpose() * grad_zb_dot;
-      //链式求导 grada = rhoOmega_ * grad * 2 * zb_dot * 
-      grada = f_D2N(thrust_f, j).transpose() * grad_zb_dot;
-
-      cost *= rhoOmega_;
-      grad *= rhoOmega_;
-      grada *= grad;
-      gradj *= grad;
-      return true;
-    } else {
-      cost = 0;
+    if (open < 0) {
+      grada.setZero();
+      gradj.setZero();
+      cost = 0.0;
       return false;
     }
 
+    double d = 0.0;
+    cost = rhoOmega_ * smoothedL1(open, mu, d);
+    gradj = rhoOmega_ * d * f_DN(thrust_f).transpose() * 2 * zb_dot;
+    grada = rhoOmega_ * d * f_D2N(thrust_f, j).transpose() * 2 * zb_dot;
+    return true;
   }
+
+  bool TrajOpt::EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd) {
+    std::cout << "uwb_dist_: " << uwb_dist_ << std::endl;
+    constexpr double mu = 0.01;
+    double dpen = uwb_dist_ - emergency_stop_dist_;
+
+    if (dpen > 0) {
+      gradv.setZero();
+      costd = 0.0;
+      return false;
+    }
+
+    double d = 0.0;
+    costd = rho_D_ * v.squaredNorm() * smoothedL1(dpen, mu, d);
+    gradv = rho_D_ * 2 * v * d;
+    return true;
+  }
+
+  bool TrajOpt::LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costlv) {
+    constexpr double mu = 0.01;
+    double delta_z = p.z() - land_target_z_;
+
+    double allowed_vmax = computeAllowedVmaxLV(delta_z);
+    double lvpen = v.squaredNorm() - allowed_vmax;
+
+    if (lvpen < 0) {
+      gradv.setZero();
+      costlv = 0.0;
+      return false;
+    }
+
+    double d = 0.0;
+    double penalty_weight = computePenaltyWeightLV(delta_z);
+    costlv = penalty_weight * smoothedL1(lvpen, mu, d);
+    gradv = penalty_weight * 2 * v * d;
+    return true;
+  }
+
+  double TrajOpt::computeAllowedVmaxLV(double delta_z) {
+      // 方案1：线性衰减
+      // return LV_min_ + (LV_max_ - LV_min_) * 
+      //        (delta_z / (delta_z + 1.0));  // 饱和函数
+      
+      // 方案2：指数衰减（更平滑）
+      double ratio = delta_z / (delta_z + 1.0);
+      return LV_min_ + (LV_max_ - LV_min_) * 
+              (1.0 - exp(-3.0 * ratio));
+      
+      // 方案3：分段线性
+      // if (delta_z > 2.0) return LV_max_;
+      // else if (delta_z > 1.0) return LV_min_ + (LV_max_ - LV_min_) * (delta_z - 1.0) / 4.0;
+      // else return LV_min_ + (0.5 - LV_min_) * delta_z;
+  }
+  
+  double TrajOpt::computePenaltyWeightLV(double delta_z) {
+      // 使用反比例函数：高度越低，惩罚越强
+      const double base_weight = rho_LV_;
+      return base_weight * (1.0 + 5.0 / (delta_z + 0.1));
+  }
+
 
 } // namespace traj_opt

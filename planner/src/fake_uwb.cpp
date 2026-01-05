@@ -30,7 +30,7 @@ void cal_fakeuwb_distance()
     fake_uwb_d = (uav0_pos_ - uav1_pos_).norm();
     dis_msg.data = fake_uwb_d;
     fakeuwb_dis_pub.publish(dis_msg);
-    ROS_INFO("fakeuwbdistance:%f",fake_uwb_d);
+    // ROS_INFO("fakeuwbdistance:%f",fake_uwb_d);
 }
 
 int main(int argc, char **argv)
