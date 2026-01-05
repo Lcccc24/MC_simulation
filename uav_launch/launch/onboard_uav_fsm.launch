@@ -79,7 +79,7 @@
         <param name="traj_opt/jmax" value="20.0"/>
         <param name="traj_opt/omega_max" value="2.0"/>
         <param name="traj_opt/rhoT" value="10000.0"/>
-        <param name="traj_opt/rhoP" value="100000.0"/>
+        <param name="traj_opt/rhoP" value="10000.0"/>
         <param name="traj_opt/rhoV" value="100000.0"/>
         <param name="traj_opt/rhoA" value="1000.0"/>
         <param name="traj_opt/rhoJ" value="100.0"/>

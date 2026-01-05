@@ -584,7 +584,7 @@ namespace traj_opt
           cost_inner += omg * step * violate_cost_.cost_omega_;
         }
 
-        if (EmerDistGradCostD(vel, gradv, violate_cost_.cost_d_)) {
+        if (!is_landing_ && EmerDistGradCostD(vel, gradv, violate_cost_.cost_d_)) {
           gradViolaVc = beta1 * gradv.transpose();
           gradViolaVt = alpha * gradv.transpose() * acc;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaVc;
@@ -754,7 +754,6 @@ namespace traj_opt
   }
 
   bool TrajOpt::EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd) {
-    std::cout << "uwb_dist_: " << uwb_dist_ << std::endl;
     constexpr double mu = 0.01;
     double dpen = uwb_dist_ - emergency_stop_dist_;
 
@@ -765,7 +764,7 @@ namespace traj_opt
     }
 
     double d = 0.0;
-    costd = rho_D_ * v.squaredNorm() * smoothedL1(dpen, mu, d);
+    costd = rho_D_ * v.squaredNorm() * smoothedL1(std::fabs(dpen), mu, d);
     gradv = rho_D_ * 2 * v * d;
     return true;
   }
