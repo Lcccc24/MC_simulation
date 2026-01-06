@@ -800,17 +800,18 @@ namespace traj_opt
 
   bool TrajOpt::EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd) {
     constexpr double mu = 0.01;
-    double dpen = uwb_dist_ - emergency_stop_dist_;
+    double dpen = emergency_stop_dist_ - uwb_dist_;
 
-    if (dpen > 0) {
+    if (dpen < 0) {
       gradv.setZero();
       costd = 0.0;
       return false;
     }
 
-    double d = 0.0;
-    costd = rho_D_ * v.squaredNorm() * smoothedL1(std::fabs(dpen), mu, d);
-    gradv = rho_D_ * d * 2 * v;
+    double dd = 0.0;
+    double phi = smoothedL1(dpen, mu, dd);
+    costd = rho_D_ * v.squaredNorm() * phi;
+    gradv = rho_D_ * phi * 2 * v;
     return true;
   }
 

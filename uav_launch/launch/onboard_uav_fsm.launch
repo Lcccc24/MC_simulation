@@ -88,7 +88,7 @@
         <param name="traj_opt/rhoLV" value="100000.0"/>
         <param name="traj_opt/LV_max" value="0.4"/>
         <param name="traj_opt/LV_min" value="0.05"/>
-        <param name="traj_opt/emergency_stop_dist" value="1.0"/>
+        <param name="traj_opt/emergency_stop_dist" value="1.5"/>
         <param name="traj_opt/safe_aera_radius" value="0.15"/>
         <param name="traj_opt/pause_debug" value="false"/>
 
