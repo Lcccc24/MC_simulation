@@ -253,6 +253,7 @@ namespace traj_opt
     row.vio_j     = obj.violate_cost_.cost_j_;
     row.vio_d     = obj.violate_cost_.cost_d_;
     row.vio_l     = obj.violate_cost_.cost_l_;
+    row.vio_c     = obj.violate_cost_.cost_c_;
     row.vio_omega = obj.violate_cost_.cost_omega_;
     row.obj_calls = obj.obj_call_;
 
@@ -343,6 +344,10 @@ namespace traj_opt
   void TrajOpt::setLandingParams(const LandingParams &lp) {
     is_landing_ = lp.is_landing;
     uwb_dist_ = lp.uwb_dist;
+    m_uav_pos_.x() = lp.m_uav_pos.x();
+    m_uav_pos_.y() = lp.m_uav_pos.y();
+    m_uav_pos_.z() = lp.m_uav_pos.z();
+
     if (is_landing_) {
       land_target_x_ = lp.land_x;
       land_target_y_ = lp.land_y;
@@ -540,6 +545,7 @@ namespace traj_opt
     met.vio_j = violate_cost_.cost_j_;
     met.vio_d = violate_cost_.cost_d_;
     met.vio_l = violate_cost_.cost_l_;
+    met.vio_c = violate_cost_.cost_c_;
     met.vio_omega = violate_cost_.cost_omega_;
     appendMetricsToCsv(met, traj_csv_path_);
 
@@ -558,7 +564,7 @@ namespace traj_opt
     double step, alpha;
     Eigen::Matrix<double, 8, 3> gradViolaPc, gradViolaVc, gradViolaAc, gradViolaJc;
     double gradViolaPt, gradViolaVt, gradViolaAt, gradViolaJt;
-    Eigen::VectorXd costs(7);
+    Eigen::VectorXd costs(8);
     costs.setZero();
     double omg;
 
@@ -634,22 +640,30 @@ namespace traj_opt
           violate_cost_.cost_d_ += omg * step * costs(4);
         }
 
-        if (is_landing_ && StrongWindAreaGradCostP(pos, gradp, costs(5))) {
+        if (!is_landing_ && CollisionGradCost(pos, gradp, costs(5))) {
           gradViolaPc = beta0 * gradp.transpose();
           gradViolaPt = alpha * gradp.transpose() * vel;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaPc;
           mincoOpt_.gdT(i) += omg * (costs(5) / K_ + step * gradViolaPt);
-          violate_cost_.cost_p_ += omg * step * costs(5);
+          violate_cost_.cost_c_ += omg * step * costs(5);
         }
 
-        if (is_landing_ && LandSmoothGradCost(pos, vel, gradp, gradv, costs(6))) {
+        if (is_landing_ && StrongWindAreaGradCostP(pos, gradp, costs(6))) {
+          gradViolaPc = beta0 * gradp.transpose();
+          gradViolaPt = alpha * gradp.transpose() * vel;
+          mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaPc;
+          mincoOpt_.gdT(i) += omg * (costs(6) / K_ + step * gradViolaPt);
+          violate_cost_.cost_p_ += omg * step * costs(6);
+        }
+
+        if (is_landing_ && LandSmoothGradCost(pos, vel, gradp, gradv, costs(7))) {
           gradViolaPc = beta0 * gradp.transpose();
           gradViolaVc = beta1 * gradv.transpose();
           gradViolaPt = alpha * gradp.transpose() * vel;
           gradViolaVt = alpha * gradv.transpose() * acc;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * (gradViolaPc + gradViolaVc);
-          mincoOpt_.gdT(i) += omg * (costs(6) / K_ + step * (gradViolaPt + gradViolaVt));
-          violate_cost_.cost_l_ += omg * step * costs(6);
+          mincoOpt_.gdT(i) += omg * (costs(7) / K_ + step * (gradViolaPt + gradViolaVt));
+          violate_cost_.cost_l_ += omg * step * costs(7);
         }
 
         s1 += step;
@@ -675,12 +689,14 @@ namespace traj_opt
     nh.param("traj_opt/rhoA", rhoA_, 1000.0);
     nh.param("traj_opt/rhoJ", rhoJ_, 1000.0);
     nh.param("traj_opt/rhoD", rho_D_, 100000.0);
-    nh.param("traj_opt/rhoOmega", rhoOmega_, 100000.0);
+    nh.param("traj_opt/rhoC", rho_C_, 100000.0);
     nh.param("traj_opt/rhoLV", rho_LV_, 100000.0);
+    nh.param("traj_opt/rhoOmega", rhoOmega_, 100000.0);
     nh.param("traj_opt/LV_max", LV_max_, 0.5);
     nh.param("traj_opt/LV_min", LV_min_, 0.1);
     nh.param("traj_opt/emergency_stop_dist", emergency_stop_dist_, 1.0);
     nh.param("traj_opt/safe_aera_radius", safe_aera_radius_, 0.2);
+    nh.param("traj_opt/collision_avoid_radius", collision_avoid_radius_, 0.8);
     nh.param("traj_opt/pause_debug", pause_debug_, false);
     visPtr_ = std::make_shared<vis_utils::VisUtils>(nh);
   }
@@ -798,23 +814,6 @@ namespace traj_opt
     return true;
   }
 
-  bool TrajOpt::EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd) {
-    constexpr double mu = 0.01;
-    double dpen = emergency_stop_dist_ - uwb_dist_;
-
-    if (dpen < 0) {
-      gradv.setZero();
-      costd = 0.0;
-      return false;
-    }
-
-    double dd = 0.0;
-    double phi = smoothedL1(dpen, mu, dd);
-    costd = rho_D_ * v.squaredNorm() * phi;
-    gradv = rho_D_ * phi * 2 * v;
-    return true;
-  }
-
   bool TrajOpt::LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradp, Eigen::Vector3d &gradv, double &costl) {
     constexpr double mu = 0.01;
     double delta_z = p.z() - land_target_z_;
@@ -873,5 +872,38 @@ namespace traj_opt
     return weight;
   }
 
+  bool TrajOpt::EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd) {
+    constexpr double mu = 0.01;
+    double dpen = emergency_stop_dist_ - uwb_dist_;
+
+    if (dpen < 0) {
+      gradv.setZero();
+      costd = 0.0;
+      return false;
+    }
+
+    double dd = 0.0;
+    double phi = smoothedL1(dpen, mu, dd);
+    costd = rho_D_ * v.squaredNorm() * phi;
+    gradv = rho_D_ * phi * 2 * v;
+    return true;
+  }
+
+  bool TrajOpt::CollisionGradCost(const Eigen::Vector3d &p, Eigen::Vector3d &gradp, double &costc) {
+    constexpr double mu = 0.01;
+    const Eigen::Vector3d p_err = p - m_uav_pos_;
+    const double ppen = collision_avoid_radius_ * collision_avoid_radius_ - p_err.squaredNorm();
+
+    if (ppen < 0) {
+      gradp.setZero();
+      costc = 0.0;
+      return false;
+    }
+
+    double dp = 0.0;
+    costc = rho_C_ * smoothedL1(ppen, mu, dp);
+    gradp = rho_C_ * dp * -2 * p_err;
+    return true;
+  }
 
 } // namespace traj_opt

@@ -16,6 +16,7 @@ namespace traj_opt
         double land_y = 0.0;
         double land_z = 0.0;
         double uwb_dist = 0.0;
+        Eigen::Vector3d m_uav_pos = Eigen::Vector3d::Zero();
     };
 
     class TrajOpt
@@ -32,9 +33,9 @@ namespace traj_opt
         // collision avoiding and dynamics paramters
         double vmax_, amax_, jmax_;
         double rhoP_, rhoV_, rhoA_, rhoJ_;
-        double rho_D_, rhoOmega_, rho_LV_;
+        double rho_C_, rho_D_, rhoOmega_, rho_LV_;
         double LV_max_, LV_min_;
-        double emergency_stop_dist_, safe_aera_radius_;
+        double emergency_stop_dist_, safe_aera_radius_, collision_avoid_radius_;
         // SE3 dynamic limitation parameters
         double omega_max_, omega_yaw_max_;
         // MINCO Optimizer
@@ -55,6 +56,7 @@ namespace traj_opt
             double cost_j_;
             double cost_d_;
             double cost_l_;
+            double cost_c_;
             double cost_omega_;
 
             inline void reset() {
@@ -63,12 +65,13 @@ namespace traj_opt
                 cost_a_ = 0.0;
                 cost_j_ = 0.0;
                 cost_d_ = 0.0;
+                cost_c_ = 0.0;
                 cost_omega_ = 0.0;
                 cost_l_ = 0.0;
             }
 
             inline double total_cost() {
-                return cost_p_ + cost_v_ + cost_a_ + cost_j_ + cost_d_ + cost_l_ + cost_omega_;
+                return cost_p_ + cost_v_ + cost_a_ + cost_j_ + cost_d_ + cost_l_ + cost_c_ + cost_omega_;
             }
         };
 
@@ -78,6 +81,7 @@ namespace traj_opt
         double land_target_y_ = 0.0;
         double land_target_z_ = 0.0;
         double uwb_dist_ = 0.0;
+        Eigen::Vector3d m_uav_pos_ = Eigen::Vector3d::Zero();
 
         long long obj_call_ = 0;
 
@@ -130,6 +134,8 @@ namespace traj_opt
         bool feasibilityGradCostJ(const Eigen::Vector3d &j, Eigen::Vector3d &gradj, double &costj);
 
         bool feasibilityGradCostOmega(const Eigen::Vector3d &a, const Eigen::Vector3d &j, Eigen::Vector3d &grada, Eigen::Vector3d &gradj, double &cost);
+
+        bool CollisionGradCost(const Eigen::Vector3d &p, Eigen::Vector3d &gradp, double &costc);
 
         bool EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd);
 

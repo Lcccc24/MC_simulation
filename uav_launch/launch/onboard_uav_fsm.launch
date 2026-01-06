@@ -36,7 +36,7 @@
         <param name="remote_guide/dock_r2m_x" type="double" value="0.0" />
         <param name="remote_guide/dock_r2m_y" type="double" value="0.0" />
         <param name="remote_guide/dock_r2m_z" type="double" value="2.0" />
-        <param name="remote_guide/d_stopite" type="double" value="0.25" />
+        <param name="remote_guide/d_stopite" type="double" value="0.2" />
         <param name="remote_guide/d_change" type="double" value="3.0" />
         <param name="remote_guide/search_flag" type="bool" value="true" />
         <param name="remote_guide/p_set_1_x" type="double" value="1.0" />
@@ -83,13 +83,15 @@
         <param name="traj_opt/rhoV" value="10000.0"/>
         <param name="traj_opt/rhoA" value="1000.0"/>
         <param name="traj_opt/rhoJ" value="100.0"/>
-        <param name="traj_opt/rhoD" value="100000.0"/>                                  
+        <param name="traj_opt/rhoD" value="10000.0"/> 
+        <param name="traj_opt/rhoC" value="100000.0"/> 
+        <param name="traj_opt/rhoLV" value="100000.0"/>                                 
         <param name="traj_opt/rhoOmega" value="10000.0"/>
-        <param name="traj_opt/rhoLV" value="100000.0"/>
         <param name="traj_opt/LV_max" value="0.4"/>
         <param name="traj_opt/LV_min" value="0.05"/>
         <param name="traj_opt/emergency_stop_dist" value="1.5"/>
         <param name="traj_opt/safe_aera_radius" value="0.15"/>
+        <param name="traj_opt/collision_avoid_radius" value="1.2"/>
         <param name="traj_opt/pause_debug" value="false"/>
 
 

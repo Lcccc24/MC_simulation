@@ -209,7 +209,7 @@ private:
     msg_timeout msg_timeout_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_state_sub_, uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_pose_sub_, uwb_distance_sub_;
+    ros::Subscriber uav_state_sub_, uav_local_pose_sub_, m_uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_pose_sub_, uwb_distance_sub_;
     // TODO  在socket通信中，需保证最少发送三次，才能保证消息被接收到
     ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_;
     ros::Publisher remote_ctrl_pub_, fsm_state_pub_;
@@ -228,6 +228,7 @@ private:
 
     void UavLocalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void UavLocalVelCallback(const geometry_msgs::TwistStamped::ConstPtr &msg);
+    void M_UavLocalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
     void UavStateCallback(const mavros_msgs::State::ConstPtr &msg);
     void UavOdomCallback(const nav_msgs::Odometry::ConstPtr &msg);
@@ -245,19 +246,18 @@ private:
     bool Circle_Search();
     void Run_Search();
     
-    mavros_msgs::State uav_state_;              // 无人机状态
-    geometry_msgs::PoseStamped uav_local_pose_; // 无人机本地位置
-    geometry_msgs::TwistStamped uav_local_vel_; // 无人机本地速度
-    nav_msgs::Odometry uav_odom_;               // 无人机里程计
-    Eigen::Vector3d uav_odom_pos_;              // 无人机里程计位置
-    Eigen::Vector3d uav_odom_vel_;              // 无人机里程计速度
-    Eigen::Vector3d uav_odom_acc_;              // TODO 无人机里程计加速度
-    Eigen::Quaterniond uav_odom_orient_;        // 无人机里程计姿态
-    quadrotor_msgs::Onboard onboard_received_;  // 接收到的母机信号
-    quadrotor_msgs::Onboard onboard_published_; // 发布的母机信号
-    // geometry_msgs::TransformStamped landing_target_tf_; // 降落目标tf
-    geometry_msgs::PoseStamped landing_target_pose_; // 降落目标位置 local ENU
-    bool is_landing_target_pose_updated_;            // 判断降落目标位姿是否刷新
+    mavros_msgs::State uav_state_;                                 // 无人机状态
+    geometry_msgs::PoseStamped uav_local_pose_, m_uav_local_pose_; // 无人机本地位置
+    geometry_msgs::TwistStamped uav_local_vel_;                    // 无人机本地速度
+    nav_msgs::Odometry uav_odom_;                                  // 无人机里程计
+    Eigen::Vector3d uav_odom_pos_, m_uav_odom_pos_;                // 无人机里程计位置
+    Eigen::Vector3d uav_odom_vel_;                                 // 无人机里程计速度
+    Eigen::Vector3d uav_odom_acc_;                                 // TODO 无人机里程计加速度
+    Eigen::Quaterniond uav_odom_orient_;                           // 无人机里程计姿态
+    quadrotor_msgs::Onboard onboard_received_;                     // 接收到的母机信号
+    quadrotor_msgs::Onboard onboard_published_;                    // 发布的母机信号
+    geometry_msgs::PoseStamped landing_target_pose_;               // 降落目标位置 local ENU
+    bool is_landing_target_pose_updated_;                          // 判断降落目标位姿是否刷新
 
     std::atomic_flag odom_lock_ = ATOMIC_FLAG_INIT;                // 里程计锁
     std::atomic_flag onboard_msg_lock_ = ATOMIC_FLAG_INIT;         // 机载无人机信号锁

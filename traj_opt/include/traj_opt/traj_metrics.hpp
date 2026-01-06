@@ -50,6 +50,7 @@ struct TrajMetrics {
   double vio_j = 0.0;
   double vio_d = 0.0;
   double vio_l = 0.0;
+  double vio_c = 0.0;
   double vio_omega = 0.0;
 
 };
@@ -75,6 +76,7 @@ struct IterMetrics {
   double vio_j = 0.0;
   double vio_d = 0.0;
   double vio_l = 0.0;
+  double vio_c = 0.0;
   double vio_omega = 0.0;
 
   // 可选：objectiveFunc调用计数

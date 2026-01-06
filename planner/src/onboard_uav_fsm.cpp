@@ -70,6 +70,7 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
 
     uav_local_pose_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/pose", 1, &OnboardUavFsm::UavLocalPoseCallback, this);
     uav_local_vel_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/velocity_local", 1, &OnboardUavFsm::UavLocalVelCallback, this);
+    m_uav_local_pose_sub_ = nh.subscribe("/AVC/mavros/local_position/pose", 1, &OnboardUavFsm::M_UavLocalPoseCallback, this);
 
     uav_state_sub_ = nh.subscribe("/Sub_UAV/mavros/state", 1, &OnboardUavFsm::UavStateCallback, this);
     uav_odom_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/odom", 1, &OnboardUavFsm::UavOdomCallback, this);
@@ -244,6 +245,11 @@ void OnboardUavFsm::UavLocalVelCallback(const geometry_msgs::TwistStamped::Const
     uav_local_vel_ = *msg;
 }
 
+void OnboardUavFsm::M_UavLocalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
+{
+    m_uav_local_pose_ = *msg;
+    m_uav_odom_pos_ << m_uav_local_pose_.pose.position.x, m_uav_local_pose_.pose.position.y, m_uav_local_pose_.pose.position.z;
+}
 /**
  * @brief 无人机里程计订阅回调函数
  * @param msg 无人机里程计消息
@@ -1727,6 +1733,10 @@ void OnboardUavFsm::RunDockingRetry()
 void OnboardUavFsm::FillLandingParams() {
     land_params_.is_landing = is_landing_;
     land_params_.uwb_dist = uwb_distance;
+    land_params_.m_uav_pos.x() = m_uav_odom_pos_.x() - onboard_uav_param_.origin_pos_offset[0];
+    land_params_.m_uav_pos.y() = m_uav_odom_pos_.y();
+    land_params_.m_uav_pos.z() = m_uav_odom_pos_.z();
+
     if (is_landing_) {
         land_params_.land_x = landing_target_pose_.pose.position.x;
         land_params_.land_y = landing_target_pose_.pose.position.y;
