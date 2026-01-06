@@ -150,6 +150,8 @@ namespace traj_opt
   {
     iter_times_++;
     TrajOpt &obj = *(TrajOpt *)ptrObj;
+    obj.obj_call_++;
+    obj.violate_cost_.reset();
     Eigen::Map<const Eigen::VectorXd> Virtual_T(x, obj.dim_t_);
     Eigen::Map<Eigen::VectorXd> grad_vt(grad, obj.dim_t_);
     Eigen::Map<const Eigen::MatrixXd> P(x + obj.dim_t_, 3, obj.dim_p_);
@@ -215,6 +217,46 @@ namespace traj_opt
       //TODO
     }
     // return k > 1e3;
+    return 0;
+  }
+
+  static inline int progressFunc(void *ptrObj,
+                             const double *x,
+                             const double *grad,
+                             const double fx,
+                             const double xnorm,
+                             const double gnorm,
+                             const double step,
+                             int n,
+                             int k,
+                             int ls)
+  {
+    TrajOpt &obj = *(TrajOpt *)ptrObj;
+
+    IterMetrics row;
+    row.success = 0; // 迭代过程先写 0，最终成功你会在 traj_metrics.csv 里记录
+    row.is_landing = obj.is_landing_ ? 1 : 0; 
+
+    row.iter = k;
+    row.ls   = ls;
+    row.n    = n;
+
+    row.fx    = static_cast<double>(fx);
+    row.xnorm = static_cast<double>(xnorm);
+    row.gnorm = static_cast<double>(gnorm);
+    row.step  = static_cast<double>(step);
+
+    // 关键：这些值必须在 objectiveFunc 里“本次评估”计算后写入 obj.violate_cost_
+    row.vio_p     = obj.violate_cost_.cost_p_;
+    row.vio_v     = obj.violate_cost_.cost_v_;
+    row.vio_a     = obj.violate_cost_.cost_a_;
+    row.vio_j     = obj.violate_cost_.cost_j_;
+    row.vio_d     = obj.violate_cost_.cost_d_;
+    row.vio_l     = obj.violate_cost_.cost_l_;
+    row.vio_omega = obj.violate_cost_.cost_omega_;
+    row.obj_calls = obj.obj_call_;
+
+    traj_opt::appendIterMetricsToCsv(row, obj.iter_csv_path_);
     return 0;
   }
 
@@ -448,7 +490,7 @@ namespace traj_opt
     //lbfgs_params 自定义参数
     opt_ret = lbfgs::lbfgs_optimize(dim_t_ + 3 * dim_p_, x_, &minObjective,
                                     &objectiveFunc, nullptr,
-                                    &earlyExit, this, &lbfgs_params);
+                                    &progressFunc, this, &lbfgs_params);
 
     //用于记录优化过程时间
     auto toc = std::chrono::steady_clock::now();
@@ -456,18 +498,15 @@ namespace traj_opt
     if(opt_ret>=0) {
       // std::cout << "\033[32m>ret: " << opt_ret << "\033[0m" << std::endl;
     } else {
+      // 优化失败 清理内存并返回false
       auto err_msg = lbfgs::lbfgs_strerror(opt_ret);
-      std::cout << "\033[31m>traj opt err: " << err_msg << "\033[0m" << std::endl;
+      std::cout << "traj opt err: " << err_msg << "optimization failed" << std::endl;
+      delete[] x_;  
+      return false;
     }
 
     if (pause_debug_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
-    //优化失败 清理内存并返回false
-    if (opt_ret < 0) {
-      delete[] x_;
-      std::cout << "optimization failed" << std::endl;
-      return false;
     }
 
     // 计算优化后的时间步长和总时间
@@ -495,13 +534,15 @@ namespace traj_opt
     met.max_omega = getMaxOmega(traj);
     met.replan_t = t_replan;              // 记录是否是重规划
     met.method = "minco_lbfgs_piece" + std::to_string(N_);
-    // met.scene_id = scene_id;           // 如果你有场景编号就填上
+    met.vio_p = violate_cost_.cost_p_;
     met.vio_v = violate_cost_.cost_v_;
+    met.vio_a = violate_cost_.cost_a_;
+    met.vio_j = violate_cost_.cost_j_;
+    met.vio_d = violate_cost_.cost_d_;
+    met.vio_l = violate_cost_.cost_l_;
     met.vio_omega = violate_cost_.cost_omega_;
-    //std::cout << "v cost: " << violate_cost_.cost_v_ << std::endl;     
-    //std::cout << "omega cost: " << violate_cost_.cost_omega_ << std::endl;
+    appendMetricsToCsv(met, traj_csv_path_);
 
-    appendMetricsToCsv(met, "/home/lc/mc_simu_ws/traj_metrics.csv");
     init_traj_ = traj;
     initial_guess_ = true;
     delete[] x_;
@@ -512,12 +553,13 @@ namespace traj_opt
   {
     Eigen::Vector3d pos, vel, acc, jer, snp;
     Eigen::Vector3d gradp, gradv, grada, gradj;
-    double cost_inner = 0.0;
     Eigen::Matrix<double, 8, 1> beta0, beta1, beta2, beta3, beta4;
     double s1, s2, s3, s4, s5, s6, s7;
     double step, alpha;
     Eigen::Matrix<double, 8, 3> gradViolaPc, gradViolaVc, gradViolaAc, gradViolaJc;
     double gradViolaPt, gradViolaVt, gradViolaAt, gradViolaJt;
+    Eigen::VectorXd costs(7);
+    costs.setZero();
     double omg;
 
     for (int i = 0; i < N_; ++i)
@@ -550,68 +592,70 @@ namespace traj_opt
  
         omg = (j == 0 || j == K_) ? 0.5 : 1.0;
 
-        if (!is_landing_ && feasibilityGradCostV(vel, gradv, violate_cost_.cost_v_)) {
+        if (!is_landing_ && feasibilityGradCostV(vel, gradv, costs(0))) {
           gradViolaVc = beta1 * gradv.transpose();
           gradViolaVt = alpha * gradv.transpose() * acc;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaVc;
-          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_v_ / K_ + step * gradViolaVt);
-          cost_inner += omg * step * violate_cost_.cost_v_;
+          mincoOpt_.gdT(i) += omg * (costs(0) / K_ + step * gradViolaVt);
+          violate_cost_.cost_v_ += omg * step * costs(0);
         }
 
-        if (feasibilityGradCostA(acc, grada, violate_cost_.cost_a_)) {
+        if (feasibilityGradCostA(acc, grada, costs(1))) {
           gradViolaAc = beta2 * grada.transpose();
           gradViolaAt = alpha * grada.transpose() * jer;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaAc;
-          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_a_ / K_ + step * gradViolaAt);
-          cost_inner += omg * step * violate_cost_.cost_a_;
+          mincoOpt_.gdT(i) += omg * (costs(1) / K_ + step * gradViolaAt);
+          violate_cost_.cost_a_ += omg * step * costs(1);
         }
 
-        if (feasibilityGradCostJ(jer, gradj, violate_cost_.cost_j_)) {
+        if (feasibilityGradCostJ(jer, gradj, costs(2))) {
           gradViolaJc = beta3 * gradj.transpose();
           gradViolaJt = alpha * gradj.transpose() * snp;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaJc;
-          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_j_ / K_ + step * gradViolaJt);
-          cost_inner += omg * step * violate_cost_.cost_j_;
+          mincoOpt_.gdT(i) += omg * (costs(2) / K_ + step * gradViolaJt);
+          violate_cost_.cost_j_ += omg * step * costs(2);
         }
 
-        if (feasibilityGradCostOmega(acc, jer, grada, gradj, violate_cost_.cost_omega_)) {
+        if (feasibilityGradCostOmega(acc, jer, grada, gradj, costs(3))) {
           gradViolaAc = beta2 * grada.transpose();
           gradViolaJc = beta3 * gradj.transpose();
           gradViolaAt = alpha * grada.transpose() * jer;
           gradViolaJt = alpha * gradj.transpose() * snp;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * (gradViolaAc + gradViolaJc);
-          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_omega_ / K_ + step * (gradViolaAt + gradViolaJt));
-          cost_inner += omg * step * violate_cost_.cost_omega_;
+          mincoOpt_.gdT(i) += omg * (costs(3) / K_ + step * (gradViolaAt + gradViolaJt));
+          violate_cost_.cost_omega_ += omg * step * costs(3);
         }
 
-        if (!is_landing_ && EmerDistGradCostD(vel, gradv, violate_cost_.cost_d_)) {
+        if (!is_landing_ && EmerDistGradCostD(vel, gradv, costs(4))) {
           gradViolaVc = beta1 * gradv.transpose();
           gradViolaVt = alpha * gradv.transpose() * acc;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaVc;
-          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_d_ / K_ + step * gradViolaVt);
-          cost_inner += omg * step * violate_cost_.cost_d_;
+          mincoOpt_.gdT(i) += omg * (costs(4) / K_ + step * gradViolaVt);
+          violate_cost_.cost_d_ += omg * step * costs(4);
         }
 
-        if (is_landing_ && StrongWindAreaGradCostP(pos, gradp, violate_cost_.cost_p_)) {
+        if (is_landing_ && StrongWindAreaGradCostP(pos, gradp, costs(5))) {
           gradViolaPc = beta0 * gradp.transpose();
           gradViolaPt = alpha * gradp.transpose() * vel;
           mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaPc;
-          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_p_ / K_ + step * gradViolaPt);
-          cost_inner += omg * step * violate_cost_.cost_p_;
+          mincoOpt_.gdT(i) += omg * (costs(5) / K_ + step * gradViolaPt);
+          violate_cost_.cost_p_ += omg * step * costs(5);
         }
 
-        if (is_landing_ && LandSmoothGradCost(pos, vel, gradv, violate_cost_.cost_lv_)) {
+        if (is_landing_ && LandSmoothGradCost(pos, vel, gradp, gradv, costs(6))) {
+          gradViolaPc = beta0 * gradp.transpose();
           gradViolaVc = beta1 * gradv.transpose();
+          gradViolaPt = alpha * gradp.transpose() * vel;
           gradViolaVt = alpha * gradv.transpose() * acc;
-          mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * gradViolaVc;
-          mincoOpt_.gdT(i) += omg * (violate_cost_.cost_lv_ / K_ + step * gradViolaVt);
-          cost_inner += omg * step * violate_cost_.cost_lv_;
+          mincoOpt_.gdC.block<8, 3>(i * 8, 0) += omg * step * (gradViolaPc + gradViolaVc);
+          mincoOpt_.gdT(i) += omg * (costs(6) / K_ + step * (gradViolaPt + gradViolaVt));
+          violate_cost_.cost_l_ += omg * step * costs(6);
         }
 
         s1 += step;
       }
     }
-    cost += cost_inner;
+    cost += violate_cost_.total_cost();
   }
 
 
@@ -646,22 +690,23 @@ namespace traj_opt
     double ppenx = std::fabs(p.x() - land_target_x_) - safe_aera_radius_;
     double ppeny = std::fabs(p.y() - land_target_y_) - safe_aera_radius_;
 
+    gradp.setZero();
+    costp = 0.0;
+
     if (ppenx < 0 && ppeny < 0) {
-      gradp.setZero();
-      costp = 0.0;
       return false;
     }
 
     if (ppenx > 0) {
       double dx = 0.0;
       costp += rhoP_ * smoothedL1(ppenx, mu, dx);
-      gradp.x() = rhoP_ * dx;
+      gradp.x() = rhoP_ * dx * ((p.x() >= land_target_x_) ? 1.0 : -1.0);
     }
 
     if (ppeny > 0) {
       double dy = 0.0;
       costp += rhoP_ * smoothedL1(ppeny, mu, dy);
-      gradp.y() = rhoP_ * dy;
+      gradp.y() = rhoP_ * dy * ((p.y() >= land_target_y_) ? 1.0 : -1.0);
     }
 
     return true;
@@ -679,7 +724,7 @@ namespace traj_opt
 
     double d = 0.0;
     costv = rhoV_ * smoothedL1(vpen, mu, d);
-    gradv = rhoV_ * 2 * d * v;
+    gradv = rhoV_ * d * 2 * v;
     return true;
     // gradv = rhoV_ * 6 * vpen * vpen * v;
     // costv = rhoV_ * vpen * vpen * vpen;
@@ -698,7 +743,7 @@ namespace traj_opt
 
     double d = 0.0;
     costa = rhoA_ * smoothedL1(apen, mu, d);
-    grada = rhoA_ * 2 * d * a;
+    grada = rhoA_ * d * 2 * a;
     return true;
     // grada = rhoA_ * 6 * apen * apen * a;
     // costa = rhoA_ * apen * apen * apen;
@@ -717,7 +762,7 @@ namespace traj_opt
 
     double d = 0.0;
     costj = rhoJ_ * smoothedL1(jpen, mu, d);
-    gradj = rhoJ_ * 2 * d * j;
+    gradj = rhoJ_ * d * 2 * j;
     return true;
     // gradj = rhoJ_ * 6 * jpen * jpen * j;
     // costj = rhoJ_ * jpen * jpen * jpen;
@@ -765,50 +810,66 @@ namespace traj_opt
 
     double d = 0.0;
     costd = rho_D_ * v.squaredNorm() * smoothedL1(std::fabs(dpen), mu, d);
-    gradv = rho_D_ * 2 * v * d;
+    gradv = rho_D_ * d * 2 * v;
     return true;
   }
 
-  bool TrajOpt::LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costlv) {
+  bool TrajOpt::LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradp, Eigen::Vector3d &gradv, double &costl) {
     constexpr double mu = 0.01;
     double delta_z = p.z() - land_target_z_;
+    delta_z = std::max(delta_z, 0.0);
+    
+    double dv, dw_ddz, dvmax_ddz = 0.0;
+    double allowed_vmax = computeAllowedVmaxGradL(delta_z, dvmax_ddz);
+    double lpen = v.squaredNorm() - allowed_vmax * allowed_vmax;
 
-    double allowed_vmax = computeAllowedVmaxLV(delta_z);
-    double lvpen = v.squaredNorm() - allowed_vmax;
-
-    if (lvpen < 0) {
+    if (lpen < 0) {
+      gradp.setZero();
       gradv.setZero();
-      costlv = 0.0;
+      costl = 0.0;
       return false;
     }
 
-    double d = 0.0;
-    double penalty_weight = computePenaltyWeightLV(delta_z);
-    costlv = penalty_weight * smoothedL1(lvpen, mu, d);
-    gradv = penalty_weight * 2 * v * d;
+    double penalty_weight = computePenaltyWeightGradL(delta_z, dw_ddz);
+    // phi = smoothedL1(lpen), dphi/dlpen = dv
+    double phi = smoothedL1(lpen, mu, dv);
+    costl = penalty_weight * phi;
+    // ∂cost/∂v = weight * dphi/dlpen * ∂lpen/∂v 
+    gradv = penalty_weight * dv * 2 * v ;
+    // ∂cost/∂z = w'(dz)*phi + w(dz)*dphi/dlpen * ∂lpen/∂z
+    // lpen = v^2 - vmax(dz)^2  =>  ∂lpen/∂z = -2*vmax*dvmax/dz
+    gradp.setZero();
+    gradp.z() = dw_ddz * phi + penalty_weight * dv * -2 * allowed_vmax * dvmax_ddz;
     return true;
   }
 
-  double TrajOpt::computeAllowedVmaxLV(double delta_z) {
-      // 方案1：线性衰减
-      // return LV_min_ + (LV_max_ - LV_min_) * 
-      //        (delta_z / (delta_z + 1.0));  // 饱和函数
-      
-      // 方案2：指数衰减（更平滑）
-      double ratio = delta_z / (delta_z + 1.0);
-      return LV_min_ + (LV_max_ - LV_min_) * 
-              (1.0 - exp(-3.0 * ratio));
-      
-      // 方案3：分段线性
-      // if (delta_z > 2.0) return LV_max_;
-      // else if (delta_z > 1.0) return LV_min_ + (LV_max_ - LV_min_) * (delta_z - 1.0) / 4.0;
-      // else return LV_min_ + (0.5 - LV_min_) * delta_z;
+  double TrajOpt::computeAllowedVmaxGradL(double delta_z, double &dvmax_ddz) {
+    // ratio = dz/(dz+1), dr/dz = 1/(dz+1)^2
+    const double denom = delta_z + 1.0;
+    const double ratio = delta_z / denom;
+    const double A = (LV_max_ - LV_min_);
+    const double k = 3.0; 
+    const double e = std::exp(-k * ratio);
+    double vmax = LV_min_ + A * (1.0 - e);
+
+    const double dratio_ddz = 1.0 / (denom * denom);
+    // d/dz [1 - exp(-k r)] = exp(-k r) * k * dr/dz
+    dvmax_ddz = A * (e * k * dratio_ddz);
+
+    return vmax;
   }
   
-  double TrajOpt::computePenaltyWeightLV(double delta_z) {
-      // 使用反比例函数：高度越低，惩罚越强
-      const double base_weight = rho_LV_;
-      return base_weight * (1.0 + 5.0 / (delta_z + 0.1));
+  double TrajOpt::computePenaltyWeightGradL(double delta_z, double &dw_ddz) {
+    const double base = rho_LV_;
+    const double eps = 0.05;
+    const double k = 5.0; 
+    const double denom = delta_z + eps;
+    double weight = base * (1.0 + k / denom);
+
+    // dw/dz = base * (-k) / (dz+eps)^2
+    dw_ddz = base * (-k) / (denom * denom);
+
+    return weight;
   }
 
 

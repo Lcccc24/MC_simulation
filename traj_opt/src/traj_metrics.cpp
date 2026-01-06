@@ -90,7 +90,7 @@ void appendMetricsToCsv(const TrajMetrics& m, const std::string& path)
            "int_acc2,int_jerk2,int_snap2,path_length,"
            "max_speed,max_acc,max_jerk,max_snap,max_omega,"
            "first_k_disp,z_drop_01s,"
-           "vio_p,vio_v,vio_a,vio_j,vio_d,vio_omega,vio_lv\n";
+           "vio_p,vio_v,vio_a,vio_j,vio_d,vio_omega,vio_l\n";
   }
 
   ofs << m.method << "," << m.scene_id << ","
@@ -100,7 +100,31 @@ void appendMetricsToCsv(const TrajMetrics& m, const std::string& path)
       << m.int_acc2 << "," << m.int_jerk2 << "," << m.int_snap2 << "," << m.path_length << ","
       << m.max_speed << "," << m.max_acc << "," << m.max_jerk << "," << m.max_snap << "," << m.max_omega << ","
       << m.first_k_disp << "," << m.z_drop_01s << ","
-      << m.vio_p << "," << m.vio_v << "," << m.vio_a << "," << m.vio_j << "," << m.vio_d << "," << m.vio_omega << "," << m.vio_lv
+      << m.vio_p << "," << m.vio_v << "," << m.vio_a << "," << m.vio_j << "," << m.vio_d << "," << m.vio_omega << "," << m.vio_l
+      << "\n";
+}
+
+void appendIterMetricsToCsv(const IterMetrics& m, const std::string& path)
+{
+  bool need_header = false;
+  {
+    std::ifstream ifs(path);
+    need_header = (!ifs.good() || ifs.peek() == std::ifstream::traits_type::eof());
+  }
+
+  std::ofstream ofs(path, std::ios::app);
+  if (!ofs.is_open()) return;
+
+  if (need_header) {
+    ofs << "success,is_landing,"
+           "iter,ls,n,fx,xnorm,gnorm,step,"
+           "vio_p,vio_v,vio_a,vio_j,vio_d,vio_omega,vio_l,obj_calls\n";
+  }
+
+  ofs << m.success << "," << m.is_landing << ","
+      << m.iter << "," << m.ls << "," << m.n << ","
+      << m.fx << "," << m.xnorm << "," << m.gnorm << "," << m.step << ","
+      << m.vio_p << "," << m.vio_v << "," << m.vio_a << "," << m.vio_j << "," << m.vio_d << "," << m.vio_omega << "," << m.vio_l << "," << m.obj_calls
       << "\n";
 }
 

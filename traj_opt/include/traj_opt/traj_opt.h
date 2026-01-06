@@ -49,13 +49,27 @@ namespace traj_opt
         std::vector<double> tracking_thetas_;
 
         struct violate_cost {
-            double cost_p_ = 0.0;
-            double cost_v_ = 0.0;
-            double cost_a_ = 0.0;
-            double cost_j_ = 0.0;
-            double cost_d_ = 0.0;
-            double cost_lv_ = 0.0;
-            double cost_omega_ = 0.0;
+            double cost_p_;
+            double cost_v_;
+            double cost_a_;
+            double cost_j_;
+            double cost_d_;
+            double cost_l_;
+            double cost_omega_;
+
+            inline void reset() {
+                cost_p_ = 0.0;
+                cost_v_ = 0.0;
+                cost_a_ = 0.0;
+                cost_j_ = 0.0;
+                cost_d_ = 0.0;
+                cost_omega_ = 0.0;
+                cost_l_ = 0.0;
+            }
+
+            inline double total_cost() {
+                return cost_p_ + cost_v_ + cost_a_ + cost_j_ + cost_d_ + cost_l_ + cost_omega_;
+            }
         };
 
         violate_cost violate_cost_;
@@ -64,7 +78,29 @@ namespace traj_opt
         double land_target_y_ = 0.0;
         double land_target_z_ = 0.0;
         double uwb_dist_ = 0.0;
-        
+
+        long long obj_call_ = 0;
+
+        static std::string nowTimeString()
+        {
+            using namespace std::chrono;
+            auto now = system_clock::now();
+            std::time_t t = system_clock::to_time_t(now);
+
+            std::tm tm{};
+        #ifdef _WIN32
+            localtime_s(&tm, &t);
+        #else
+            localtime_r(&t, &tm);
+        #endif
+
+            std::ostringstream oss;
+            oss << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S");  // Windows 下不要用 :
+            return oss.str();
+        }
+
+        std::string iter_csv_path_ = "/home/lc/mc_simu_ws/lbfgs_iter_metrics_" + nowTimeString() + ".csv";
+        std::string traj_csv_path_ = "/home/lc/mc_simu_ws/traj_metrics_" + nowTimeString() + ".csv";
 
     public:
         TrajOpt(ros::NodeHandle &nh);
@@ -97,11 +133,11 @@ namespace traj_opt
 
         bool EmerDistGradCostD(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costd);
 
-        bool LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costlv);
+        bool LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradp, Eigen::Vector3d &gradv, double &costl);
 
-        double computeAllowedVmaxLV(double delta_z);
+        double computeAllowedVmaxGradL(double delta_z, double &dvmax_ddz);
 
-        double computePenaltyWeightLV(double delta_z);       
+        double computePenaltyWeightGradL(double delta_z, double &dw_ddz);       
     };
 
 } // namespace traj_opt

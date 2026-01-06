@@ -49,10 +49,38 @@ struct TrajMetrics {
   double vio_a = 0.0;
   double vio_j = 0.0;
   double vio_d = 0.0;
-  double vio_lv = 0.0;
+  double vio_l = 0.0;
   double vio_omega = 0.0;
 
 };
+
+
+struct IterMetrics {
+  int success = 0;      // 0/1
+  int is_landing = 0;   // 0/1
+
+  int iter = 0;         // k
+  int ls = 0;           // line search steps
+  int n = 0;            // dimension
+
+  double fx = 0.0;
+  double xnorm = 0.0;
+  double gnorm = 0.0;
+  double step = 0.0;
+
+  // 分项（来自 objectiveFunc 的当前一次 evaluation 结果）
+  double vio_p = 0.0;
+  double vio_v = 0.0;
+  double vio_a = 0.0;
+  double vio_j = 0.0;
+  double vio_d = 0.0;
+  double vio_l = 0.0;
+  double vio_omega = 0.0;
+
+  // 可选：objectiveFunc调用计数
+  long long obj_calls = 0;
+};
+
 
 TrajMetrics evaluateTrajectory(const Trajectory& traj,
                               int N_piece,
@@ -61,5 +89,6 @@ TrajMetrics evaluateTrajectory(const Trajectory& traj,
                               int first_k);
 
 void appendMetricsToCsv(const TrajMetrics& m, const std::string& path);
+void appendIterMetricsToCsv(const IterMetrics& m, const std::string& path);
 
 }
