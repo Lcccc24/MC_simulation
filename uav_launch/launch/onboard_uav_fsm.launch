@@ -92,8 +92,6 @@
         <param name="traj_opt/emergency_stop_dist" value="1.5"/>
         <param name="traj_opt/safe_aera_radius" value="0.15"/>
         <param name="traj_opt/collision_avoid_radius" value="1.2"/>
-        <param name="traj_opt/pause_debug" value="false"/>
-
 
 
     <node pkg="planner" type="traj_server_node" name="traj_server_node" output="screen" />

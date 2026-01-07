@@ -24,30 +24,24 @@ namespace traj_opt
     public:
         ros::NodeHandle nh_;
         std::shared_ptr<vis_utils::VisUtils> visPtr_;
-        bool pause_debug_ = false;
         bool is_landing_ = false;
-        // # pieces and # key points
         int N_, K_, dim_t_, dim_p_;
-        // weight for time regularization term
-        double rhoT_;
-        // collision avoiding and dynamics paramters
         double vmax_, amax_, jmax_;
+        double rhoT_;
         double rhoP_, rhoV_, rhoA_, rhoJ_;
         double rho_C_, rho_D_, rhoOmega_, rho_LV_;
         double LV_max_, LV_min_;
         double emergency_stop_dist_, safe_aera_radius_, collision_avoid_radius_;
-        // SE3 dynamic limitation parameters
-        double omega_max_, omega_yaw_max_;
-        // MINCO Optimizer
+        double omega_max_;
         minco::MINCO_S4 mincoOpt_;
         Eigen::MatrixXd initS_;
-        // duration of each piece of the trajectory
-        Eigen::VectorXd t_;
         double *x_;
 
-        std::vector<Eigen::Vector3d> tracking_ps_;
-        std::vector<Eigen::Vector3d> tracking_visible_ps_;
-        std::vector<double> tracking_thetas_;
+        Eigen::Vector3d g_{0.0, 0.0, -9.8};
+        Eigen::Vector3d car_p_{Eigen::Vector3d::Zero()};
+        Eigen::Vector3d car_v_{Eigen::Vector3d::Zero()}; 
+        Trajectory bvp_traj_;
+        int iter_times_{0};
 
         struct violate_cost {
             double cost_p_;
@@ -110,19 +104,62 @@ namespace traj_opt
         TrajOpt(ros::NodeHandle &nh);
         ~TrajOpt() {}
 
-        void setLandingParams(const LandingParams &lp);
-        int optimize(const double &delta = 1e-4);
-        bool generate_traj(const Eigen::MatrixXd &iniState,
-                           const Eigen::Vector3d &car_p,
-                           const Eigen::Vector3d &car_v,
-                           const Eigen::Quaterniond &land_q,
-                           const int &N,
-                           Trajectory &traj,
-                           const double &t_replan = -1.0);
+        Eigen::MatrixXd f_DN(const Eigen::Vector3d &x);
 
-        //lc add
+        Eigen::MatrixXd f_D2N(const Eigen::Vector3d &x, const Eigen::Vector3d &y);
+
+        double smoothedL1(const double &x, const double mu, double &grad);
+
+        template <typename EIGENVEC>  
+        void RealT2VirtualT(const Eigen::VectorXd &RT, EIGENVEC &VT);
+
+        template <typename EIGENVEC>
+        void VirtualT2RealT(const EIGENVEC &VT, Eigen::VectorXd &RT);
+
+        template <typename EIGENVEC, typename EIGENVECGD>
+        void dRealT_dVirtualT(
+            const Eigen::VectorXd &RT,
+            const EIGENVEC &VT, 
+            const Eigen::VectorXd &gdRT,
+            EIGENVECGD &gdVT,
+            double wei_time,
+            double &costT);
+
+        double gdT2t(double t);
+
+        void bvp(const double &t,
+            const Eigen::MatrixXd i_state,
+            const Eigen::MatrixXd f_state,
+            CoefficientMat &coeffMat);
+
         bool trans_bvp_traj(Trajectory &traj);
 
+        double getMaxOmega(Trajectory &traj);
+
+        void setLandingParams(const LandingParams &lp);
+
+        bool generate_traj(const Eigen::MatrixXd &iniState,
+                            const Eigen::Vector3d &car_p,
+                            const Eigen::Vector3d &car_v,
+                            const int &N,
+                            Trajectory &traj);
+
+        static int progressFunc(void *ptrObj,
+                                const double *x,
+                                const double *grad,
+                                const double fx,
+                                const double xnorm,
+                                const double gnorm,
+                                const double step,
+                                int n,
+                                int k,
+                                int ls);
+
+        static double objectiveFunc(void *ptrObj,
+                                    const double *x,
+                                    double *grad,
+                                    const int n);
+                            
         void addTimeIntPenalty(double &cost);
 
         bool StrongWindAreaGradCostP(const Eigen::Vector3d &p, Eigen::Vector3d &gradp, double &costp);
@@ -143,7 +180,8 @@ namespace traj_opt
 
         double computeAllowedVmaxGradL(double delta_z, double &dvmax_ddz);
 
-        double computePenaltyWeightGradL(double delta_z, double &dw_ddz);       
+        double computePenaltyWeightGradL(double delta_z, double &dw_ddz);
+
     };
 
 } // namespace traj_opt

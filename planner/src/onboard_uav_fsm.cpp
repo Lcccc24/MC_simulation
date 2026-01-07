@@ -769,7 +769,7 @@ void OnboardUavFsm::Remote_Guidance()
     if(rg_flag == 1)
     {
         // 确保索引 i 在 p_set 的范围内
-        if (i >= p_set.size()) 
+        if (i >= static_cast<int>(p_set.size())) 
         {
             ROS_WARN("Index i (%d) is out of bounds for p_set size (%ld)", i, p_set.size());
             return;
@@ -832,8 +832,7 @@ void OnboardUavFsm::Remote_Guidance()
                 rg_flag = 2;
         }
 
-        if(PlanTrajectory());
-        {
+        if (PlanTrajectory()){
             is_replan_ = false;
             // 打印目标位姿
             // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
@@ -870,8 +869,7 @@ void OnboardUavFsm::Remote_Guidance()
         else
             rg_flag = 3;
 
-        if(PlanTrajectory());
-        {
+        if (PlanTrajectory()) {
             is_replan_ = false;
             // 打印目标位姿
             // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
@@ -898,8 +896,7 @@ void OnboardUavFsm::Remote_Guidance()
             return;
         }
         
-        if(PlanTrajectory());
-        {
+        if (PlanTrajectory()) {
             is_replan_ = false;
             // 打印目标位姿
             // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
@@ -1166,7 +1163,7 @@ bool OnboardUavFsm::Circle_Search() {
                    cir_center[1] + cir_radius * sin(t * omega), 
                    cir_center[2];
 
-    if(PlanTrajectory())
+    if (PlanTrajectory())
     {
         is_replan_ = false;
     }
@@ -1468,8 +1465,7 @@ void OnboardUavFsm::RunDockingLanding()
         target_q_.w() = landing_target_pose_.pose.orientation.w;
 
        
-        if(PlanTrajectory());
-        {
+        if (PlanTrajectory()) {
             is_replan_ = false;
             // 打印目标位姿
             //ROS_INFO("des:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
@@ -1584,8 +1580,7 @@ void OnboardUavFsm::RunDockingLanding()
         }
 
 
-        if(PlanTrajectory());
-        {
+        if (PlanTrajectory()) {
             is_replan_ = false;
             // 打印目标位姿
             // ROS_INFO("fin:TARGET_POS:%.2f,%.2f,%.2f\n",target_pos_.x(),target_pos_.y(),target_pos_.z());
@@ -1666,8 +1661,7 @@ void OnboardUavFsm::RunDockingRetry()
 
         target_pos_ = uav_odom_pos_;
 
-        if(PlanTrajectory());
-        {
+        if (PlanTrajectory()) {
             is_replan_ = false;
             // 打印目标位姿
             // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
@@ -1772,7 +1766,7 @@ bool OnboardUavFsm::PlanTrajectory()
 
     }
 
-    bool is_success = traj_opt_ptr_->generate_traj(start_state, target_pos_, target_vel_, target_q_, N, poly_traj_);
+    bool is_success = traj_opt_ptr_->generate_traj(start_state, target_pos_, target_vel_, N, poly_traj_);
     if (is_success)
     {
         is_first_run_ = false;

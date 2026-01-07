@@ -5,26 +5,56 @@
 namespace traj_opt
 {
 
-  static Eigen::Vector3d car_p_, car_v_;
-  static Eigen::Vector3d g_(0, 0, -9.8);
-  static Trajectory init_traj_;
-  static Trajectory bvp_traj;
-  static bool initial_guess_ = false;
+  TrajOpt::TrajOpt(ros::NodeHandle &nh)
+  {
+    nh.param("traj_opt/is_landing", is_landing_, false);
+    // nh.getParam("N", N_);
+    nh.param("traj_opt/K", K_, 16);
+    // load dynamic paramters
+    nh.param("traj_opt/vmax", vmax_, 3.0);
+    nh.param("traj_opt/amax", amax_, 3.0);
+    nh.param("traj_opt/jmax", jmax_, 3.0);
+    nh.param("traj_opt/omega_max", omega_max_, 3.0);
+    nh.param("traj_opt/rhoT", rhoT_, 100000.0);
+    nh.param("traj_opt/rhoP", rhoP_, 10000000.0);
+    nh.param("traj_opt/rhoV", rhoV_, 1000.0);
+    nh.param("traj_opt/rhoA", rhoA_, 1000.0);
+    nh.param("traj_opt/rhoJ", rhoJ_, 1000.0);
+    nh.param("traj_opt/rhoD", rho_D_, 100000.0);
+    nh.param("traj_opt/rhoC", rho_C_, 100000.0);
+    nh.param("traj_opt/rhoLV", rho_LV_, 100000.0);
+    nh.param("traj_opt/rhoOmega", rhoOmega_, 100000.0);
+    nh.param("traj_opt/LV_max", LV_max_, 0.5);
+    nh.param("traj_opt/LV_min", LV_min_, 0.1);
+    nh.param("traj_opt/emergency_stop_dist", emergency_stop_dist_, 1.0);
+    nh.param("traj_opt/safe_aera_radius", safe_aera_radius_, 0.2);
+    nh.param("traj_opt/collision_avoid_radius", collision_avoid_radius_, 0.8);
+    visPtr_ = std::make_shared<vis_utils::VisUtils>(nh);
+  }
 
-  static double tictoc_innerloop_;
-  static double tictoc_integral_;
+  void TrajOpt::setLandingParams(const LandingParams &lp) {
+    is_landing_ = lp.is_landing;
+    uwb_dist_ = lp.uwb_dist;
+    m_uav_pos_.x() = lp.m_uav_pos.x();
+    m_uav_pos_.y() = lp.m_uav_pos.y();
+    m_uav_pos_.z() = lp.m_uav_pos.z();
 
-  static int iter_times_;
+    if (is_landing_) {
+      land_target_x_ = lp.land_x;
+      land_target_y_ = lp.land_y;
+      land_target_z_ = lp.land_z;
+    }
+  }
 
   //推力方向导数
-  static Eigen::MatrixXd f_DN(const Eigen::Vector3d &x)
+  Eigen::MatrixXd TrajOpt::f_DN(const Eigen::Vector3d &x)
   {
     double x_norm_2 = x.squaredNorm();
     return (Eigen::MatrixXd::Identity(3, 3) - x * x.transpose() / x_norm_2) / sqrt(x_norm_2);
   }
 
   //推力方向导数
-  static Eigen::MatrixXd f_D2N(const Eigen::Vector3d &x, const Eigen::Vector3d &y)
+  Eigen::MatrixXd TrajOpt::f_D2N(const Eigen::Vector3d &x, const Eigen::Vector3d &y)
   {
     double x_norm_2 = x.squaredNorm();
     double x_norm_3 = x_norm_2 * x.norm();
@@ -34,9 +64,7 @@ namespace traj_opt
   
   // SECTION  variables transformation and gradient transmission
   //max(x,0)的C2光滑化函数 
-  static double smoothedL1(const double &x,
-                           const double mu,
-                           double &grad)
+  double TrajOpt::smoothedL1(const double &x, const double mu, double &grad)
   {
     if (x < 0.0)
     {
@@ -56,41 +84,9 @@ namespace traj_opt
       return mumxd2 * sqrxdmu * xdmu;
     }
   }
-  
-  static double smoothed01(const double &x,
-                           double &grad)
-  {
-    static double mu = 0.01;
-    static double mu4 = mu * mu * mu * mu;
-    static double mu4_1 = 1.0 / mu4;
-    if (x < -mu)
-    {
-      grad = 0;
-      return 0;
-    }
-    else if (x < 0)
-    {
-      double y = x + mu;
-      double y2 = y * y;
-      grad = y2 * (mu - 2 * x) * mu4_1;
-      return 0.5 * y2 * y * (mu - x) * mu4_1;
-    }
-    else if (x < mu)
-    {
-      double y = x - mu;
-      double y2 = y * y;
-      grad = y2 * (mu + 2 * x) * mu4_1;
-      return 0.5 * y2 * y * (mu + x) * mu4_1 + 1;
-    }
-    else
-    {
-      grad = 0;
-      return 1;
-    }
-  }
 
   template <typename EIGENVEC>  
-  static void RealT2VirtualT(const Eigen::VectorXd &RT, EIGENVEC &VT) {
+  void TrajOpt::RealT2VirtualT(const Eigen::VectorXd &RT, EIGENVEC &VT) {
     for (int i = 0; i < RT.size(); ++i) {
       VT(i) = RT(i) > 1.0 ? (sqrt(2.0 * RT(i) - 1.0) - 1.0)
                           : (1.0 - sqrt(2.0 / RT(i) - 1.0));
@@ -98,14 +94,14 @@ namespace traj_opt
   }
 
   template <typename EIGENVEC>
-  static void VirtualT2RealT(const EIGENVEC &VT, Eigen::VectorXd &RT) {
+  void TrajOpt::VirtualT2RealT(const EIGENVEC &VT, Eigen::VectorXd &RT) {
     for (int i = 0; i < VT.size(); ++i) {
       RT(i) = VT(i) > 0.0 ? ((0.5 * VT(i) + 1.0) * VT(i) + 1.0) 
                           : 1.0 / ((0.5 * VT(i) - 1.0) * VT(i) + 1.0);
     }
   }
 
-  static inline double gdT2t(double t)
+  double TrajOpt::gdT2t(double t)
   {
     if (t > 0)
     {
@@ -120,13 +116,13 @@ namespace traj_opt
 
 
   template <typename EIGENVEC, typename EIGENVECGD>
-  static inline void dRealT_dVirtualT(
-    const Eigen::VectorXd &RT,            // real durations (N)
-    const EIGENVEC &VT,            // virtual vars   (N)
-    const Eigen::VectorXd &gdRT,          // grad wrt RT    (N)
-    EIGENVECGD &gdVT,                // grad wrt VT    (N) output
-    double wei_time,                      // rhoT_ / wei_time_
-    double &costT)                        // output
+  void TrajOpt::dRealT_dVirtualT(
+    const Eigen::VectorXd &RT,
+    const EIGENVEC &VT, 
+    const Eigen::VectorXd &gdRT,
+    EIGENVECGD &gdVT,
+    double wei_time,
+    double &costT)
   {
     const int N = VT.size();
     gdVT.resize(N);
@@ -140,128 +136,7 @@ namespace traj_opt
     costT = RT.sum() * wei_time;
   }
 
-  // !SECTION variables transformation and gradient transmission
-
-  // SECTION object function
-  static inline double objectiveFunc(void *ptrObj,
-                                     const double *x,
-                                     double *grad,
-                                     const int n)
-  {
-    iter_times_++;
-    TrajOpt &obj = *(TrajOpt *)ptrObj;
-    obj.obj_call_++;
-    obj.violate_cost_.reset();
-    Eigen::Map<const Eigen::VectorXd> Virtual_T(x, obj.dim_t_);
-    Eigen::Map<Eigen::VectorXd> grad_vt(grad, obj.dim_t_);
-    Eigen::Map<const Eigen::MatrixXd> P(x + obj.dim_t_, 3, obj.dim_p_);
-    Eigen::Map<Eigen::MatrixXd> gradP(grad + obj.dim_t_, 3, obj.dim_p_);
-
-    Eigen::VectorXd Dur_T(obj.N_);  
-    VirtualT2RealT(Virtual_T, Dur_T);
-    for (int i = 0; i < obj.N_; ++i) {
-      if (Dur_T(i) < 1e-3) Dur_T(i) = 1e-3;
-    }
-    const double total_t = Dur_T.sum();
-
-    Eigen::MatrixXd tailS(3, 4);
-    tailS.col(0) = car_p_ + car_v_ * total_t;
-    tailS.col(1) = car_v_;
-    tailS.col(2).setZero();
-    tailS.col(3).setZero();
-
-    auto tic = std::chrono::steady_clock::now();
-    obj.mincoOpt_.generate(obj.initS_, tailS, P, Dur_T);
-
-    double cost = obj.mincoOpt_.getTrajSnapCost();
-    obj.mincoOpt_.calGrads_CT();
-
-    auto toc = std::chrono::steady_clock::now();
-    tictoc_innerloop_ += (toc - tic).count();
-
-    tic = std::chrono::steady_clock::now();
-    obj.addTimeIntPenalty(cost);
-
-    toc = std::chrono::steady_clock::now();
-    tictoc_integral_ += (toc - tic).count();
-
-    tic = std::chrono::steady_clock::now();
-    obj.mincoOpt_.calGrads_PT();
-    toc = std::chrono::steady_clock::now();
-    tictoc_innerloop_ += (toc - tic).count();
-
-    gradP = obj.mincoOpt_.gdP;
-    double costT = 0;
-    dRealT_dVirtualT(Dur_T, Virtual_T, obj.mincoOpt_.gdT, grad_vt, obj.rhoT_, costT);
-    cost += costT;
-
-    return cost;
-  }
-
-
-  // !SECTION object function
-  static inline int earlyExit(void *ptrObj,
-                              const double *x,
-                              const double *grad,
-                              const double fx,
-                              const double xnorm,
-                              const double gnorm,
-                              const double step,
-                              int n,
-                              int k,
-                              int ls)
-  {
-    TrajOpt &obj = *(TrajOpt *)ptrObj;
-    if (obj.pause_debug_)
-    {
-      //TODO
-    }
-    // return k > 1e3;
-    return 0;
-  }
-
-  static inline int progressFunc(void *ptrObj,
-                             const double *x,
-                             const double *grad,
-                             const double fx,
-                             const double xnorm,
-                             const double gnorm,
-                             const double step,
-                             int n,
-                             int k,
-                             int ls)
-  {
-    TrajOpt &obj = *(TrajOpt *)ptrObj;
-
-    IterMetrics row;
-    row.success = 0; // 迭代过程先写 0，最终成功你会在 traj_metrics.csv 里记录
-    row.is_landing = obj.is_landing_ ? 1 : 0; 
-
-    row.iter = k;
-    row.ls   = ls;
-    row.n    = n;
-
-    row.fx    = static_cast<double>(fx);
-    row.xnorm = static_cast<double>(xnorm);
-    row.gnorm = static_cast<double>(gnorm);
-    row.step  = static_cast<double>(step);
-
-    // 关键：这些值必须在 objectiveFunc 里“本次评估”计算后写入 obj.violate_cost_
-    row.vio_p     = obj.violate_cost_.cost_p_;
-    row.vio_v     = obj.violate_cost_.cost_v_;
-    row.vio_a     = obj.violate_cost_.cost_a_;
-    row.vio_j     = obj.violate_cost_.cost_j_;
-    row.vio_d     = obj.violate_cost_.cost_d_;
-    row.vio_l     = obj.violate_cost_.cost_l_;
-    row.vio_c     = obj.violate_cost_.cost_c_;
-    row.vio_omega = obj.violate_cost_.cost_omega_;
-    row.obj_calls = obj.obj_call_;
-
-    traj_opt::appendIterMetricsToCsv(row, obj.iter_csv_path_);
-    return 0;
-  }
-
-  static void    bvp(const double &t,
+  void TrajOpt::bvp(const double &t,
                   const Eigen::MatrixXd i_state,
                   const Eigen::MatrixXd f_state,
                   CoefficientMat &coeffMat)
@@ -304,7 +179,7 @@ namespace traj_opt
     coeffMat.col(3) = coeffMat.col(3) / t4;
   }
 
-  static double getMaxOmega(Trajectory &traj)
+  double TrajOpt::getMaxOmega(Trajectory &traj)
   {
     double dt = 0.01;
     double max_omega = 0;
@@ -323,50 +198,98 @@ namespace traj_opt
     return max_omega;
   }
 
-  static double getMaxVel(Trajectory &traj)
-  {
-    double dt = 0.01;
-    double max_vel = 0;
-    for (double t = 0; t < traj.getTotalDuration(); t += dt)
-    {
-      double v = traj.getVel(t).norm();
-      if (v > max_vel)
-      {
-        max_vel = v;
-      }
-    }
-    return max_vel;
-  }
-
-/**
- * @brief set landing parameters
-*/
-  void TrajOpt::setLandingParams(const LandingParams &lp) {
-    is_landing_ = lp.is_landing;
-    uwb_dist_ = lp.uwb_dist;
-    m_uav_pos_.x() = lp.m_uav_pos.x();
-    m_uav_pos_.y() = lp.m_uav_pos.y();
-    m_uav_pos_.z() = lp.m_uav_pos.z();
-
-    if (is_landing_) {
-      land_target_x_ = lp.land_x;
-      land_target_y_ = lp.land_y;
-      land_target_z_ = lp.land_z;
-    }
-  }
-
   bool TrajOpt::trans_bvp_traj(Trajectory &traj)
   {
-    traj = bvp_traj;
+    traj = bvp_traj_;
     return true;
   }
 
+  double TrajOpt::objectiveFunc(void *ptrObj,
+                                  const double *x,
+                                  double *grad,
+                                  const int n)
+  {
+    
+    auto* obj = static_cast<TrajOpt*>(ptrObj);
+    obj->iter_times_++;
+    obj->obj_call_++;
+    obj->violate_cost_.reset();
+    Eigen::Map<const Eigen::VectorXd> Virtual_T(x, obj->dim_t_);
+    Eigen::Map<Eigen::VectorXd> grad_vt(grad, obj->dim_t_);
+    Eigen::Map<const Eigen::MatrixXd> P(x + obj->dim_t_, 3, obj->dim_p_);
+    Eigen::Map<Eigen::MatrixXd> gradP(grad + obj->dim_t_, 3, obj->dim_p_);
+
+    Eigen::VectorXd Dur_T(obj->N_);  
+    obj->VirtualT2RealT(Virtual_T, Dur_T);
+    for (int i = 0; i < obj->N_; ++i) {
+      if (Dur_T(i) < 1e-3) Dur_T(i) = 1e-3;
+    }
+    const double total_t = Dur_T.sum();
+
+    Eigen::MatrixXd tailS(3, 4);
+    tailS.col(0) = obj->car_p_ + obj->car_v_ * total_t;
+    tailS.col(1) = obj->car_v_;
+    tailS.col(2).setZero();
+    tailS.col(3).setZero();
+
+    obj->mincoOpt_.generate(obj->initS_, tailS, P, Dur_T);
+    double cost = obj->mincoOpt_.getTrajSnapCost();
+    obj->mincoOpt_.calGrads_CT();
+    obj->addTimeIntPenalty(cost);
+    obj->mincoOpt_.calGrads_PT();
+    gradP = obj->mincoOpt_.gdP;
+    double costT = 0;
+    obj->dRealT_dVirtualT(Dur_T, Virtual_T, obj->mincoOpt_.gdT, grad_vt, obj->rhoT_, costT);
+    cost += costT;
+
+    return cost;
+  }
+
+  int TrajOpt::progressFunc(void *ptrObj,
+                             const double *x,
+                             const double *grad,
+                             const double fx,
+                             const double xnorm,
+                             const double gnorm,
+                             const double step,
+                             int n,
+                             int k,
+                             int ls)
+  {
+    auto* obj = static_cast<TrajOpt*>(ptrObj);
+
+    IterMetrics row;
+    row.success = 0; // 迭代过程先写 0，最终成功你会在 traj_metrics.csv 里记录
+    row.is_landing = obj->is_landing_ ? 1 : 0; 
+
+    row.iter = k;
+    row.ls   = ls;
+    row.n    = n;
+
+    row.fx    = static_cast<double>(fx);
+    row.xnorm = static_cast<double>(xnorm);
+    row.gnorm = static_cast<double>(gnorm);
+    row.step  = static_cast<double>(step);
+
+    // 关键：这些值必须在 objectiveFunc 里“本次评估”计算后写入 obj->violate_cost_
+    row.vio_p     = obj->violate_cost_.cost_p_;
+    row.vio_v     = obj->violate_cost_.cost_v_;
+    row.vio_a     = obj->violate_cost_.cost_a_;
+    row.vio_j     = obj->violate_cost_.cost_j_;
+    row.vio_d     = obj->violate_cost_.cost_d_;
+    row.vio_l     = obj->violate_cost_.cost_l_;
+    row.vio_c     = obj->violate_cost_.cost_c_;
+    row.vio_omega = obj->violate_cost_.cost_omega_;
+    row.obj_calls = obj->obj_call_;
+
+    appendIterMetricsToCsv(row, obj->iter_csv_path_);
+    return 0;
+  }
 
   /*
   iniState: 初始状态 包含位置速度等信息
   car_p: 目标位置
   car_v: 目标速度
-  land_q: 目标姿态
   N: 轨迹分段数
   t_replan: 重规划时间 t_replan默认为-1时，不进行重规划
   traj: 轨迹对象，用于存储生成的轨迹信息
@@ -374,10 +297,8 @@ namespace traj_opt
   bool TrajOpt::generate_traj(const Eigen::MatrixXd &iniState,
                               const Eigen::Vector3d &car_p,
                               const Eigen::Vector3d &car_v,
-                              const Eigen::Quaterniond &land_q,
                               const int &N,
-                              Trajectory &traj,
-                              const double &t_replan)
+                              Trajectory &traj)
   {
     N_ = N;
     //时间维度
@@ -401,74 +322,49 @@ namespace traj_opt
 
     mincoOpt_.reset(N_);
 
-    //initial_guess_初始为false
-    //t_replan默认为-1，不进行重规划
-    //opt_once一直为false？？
-    bool opt_once = initial_guess_ && t_replan > 0 && t_replan < init_traj_.getTotalDuration();
-    //如果存在初始猜测值
-    if (opt_once) {
-      //getDurations返回的是每段的时长
-      Eigen::VectorXd durs = init_traj_.getDurations();
-      if (durs.size() != N_) {
-        // fallback：均分总时长 或 重新用BVP初始化
-        Dur_T.setConstant(init_traj_.getTotalDuration() / N_);
-      } else {
-        Dur_T = durs;
-      }
-      RealT2VirtualT(Dur_T, Virtual_T);
-      double t_abs = 0.0;
-      for (int i = 1; i < N_; ++i) {
-        t_abs += Dur_T(i-1);
-        // getPos需要轨迹全局时间
-        P.col(i - 1) = init_traj_.getPos(t_abs);
-      }
-    } else {
-      Eigen::MatrixXd bvp_i = initS_;
-      Eigen::MatrixXd bvp_f(3, 4);
-      bvp_f.col(0) = car_p_;
-      bvp_f.col(1) = car_v_;
-      bvp_f.col(2).setZero();
-      bvp_f.col(3).setZero();
-      //先按最大速度求T_bvp,后面在while循环减小到 到达要求为止
-      double t_bvp = (bvp_f.col(0) - bvp_i.col(0)).norm() / vmax_;
-      CoefficientMat coeffMat;
-      double max_omega = 0;
-      do {
-        t_bvp += 1.0;
-        //假设目标以恒定速度 car_v_ 移动，新的终止位置是初始位置加上时间内的位移。
-        bvp_f.col(0) = car_p_ + car_v_ * t_bvp;
-        //bvp求出起点到终点这段轨迹的多项式系数矩阵，并将其存储在 coeffMat
-        bvp(t_bvp, bvp_i, bvp_f, coeffMat);
-        std::vector<double> durs{t_bvp};
-        std::vector<CoefficientMat> coeffs{coeffMat};
-        Trajectory traj(durs, coeffs);
-        max_omega = getMaxOmega(traj);
+    // 利用 BVP 解在均匀时间点采样，得到初始控制点 P，为后续优化提供合理初始值
+    Eigen::MatrixXd bvp_i = initS_;
+    Eigen::MatrixXd bvp_f(3, 4);
+    bvp_f.col(0) = car_p_;
+    bvp_f.col(1) = car_v_;
+    bvp_f.col(2).setZero();
+    bvp_f.col(3).setZero();
+    //先按最大速度求T_bvp,后面在while循环减小到 到达要求为止
+    double t_bvp = (bvp_f.col(0) - bvp_i.col(0)).norm() / vmax_;
+    CoefficientMat coeffMat;
+    double max_omega = 0;
+    do {
+      t_bvp += 1.0;
+      //假设目标以恒定速度 car_v_ 移动，新的终止位置是初始位置加上时间内的位移。
+      bvp_f.col(0) = car_p_ + car_v_ * t_bvp;
+      //bvp求出起点到终点这段轨迹的多项式系数矩阵，并将其存储在 coeffMat
+      bvp(t_bvp, bvp_i, bvp_f, coeffMat);
+      std::vector<double> durs{t_bvp};
+      std::vector<CoefficientMat> coeffs{coeffMat};
+      Trajectory traj(durs, coeffs);
+      max_omega = getMaxOmega(traj);
 
-        bvp_traj = traj;
-      } while (max_omega > 1.5 * omega_max_);
-      //创建一个 8 维向量 tt，并将最后一个元素设为 1.0
+      bvp_traj_ = traj;
+    } while (max_omega > 1.5 * omega_max_);
+    //创建一个 8 维向量 tt，并将最后一个元素设为 1.0
 
-      Eigen::VectorXd tt(8);
-      //tt(7)为t零次方=1 倒序填充
-      tt(7) = 1.0;
-      for (int i = 1; i < N_; ++i) {
-        //计算第 i 个控制点对应的归一化时间
-        double tt0 = (i * 1.0 / N_) * t_bvp;
-        for (int j = 6; j >= 0; j -= 1) {
-          tt(j) = tt(j + 1) * tt0;
-        }
-        //计算当前控制点对应的轨迹位置，并将其存储在 P 的第 i 列中
-        //把bvp算出来的轨迹分成N个控制点，每个控制点对应一个时间tt
-        P.col(i - 1) = coeffMat * tt;
+    Eigen::VectorXd tt(8);
+    //tt(7)为t零次方=1 倒序填充
+    tt(7) = 1.0;
+    for (int i = 1; i < N_; ++i) {
+      //计算第 i 个控制点对应的归一化时间
+      double tt0 = (i * 1.0 / N_) * t_bvp;
+      for (int j = 6; j >= 0; j -= 1) {
+        tt(j) = tt(j + 1) * tt0;
       }
-      //t_bvp / N_：平均每段轨迹的时间
-      Dur_T.setConstant(t_bvp / N_);
-      //std::cout  << "Init Dur_T: " << Dur_T.transpose() << std::endl;
-      RealT2VirtualT(Dur_T, Virtual_T);
+      //计算当前控制点对应的轨迹位置，并将其存储在 P 的第 i 列中
+      //把bvp算出来的轨迹分成N个控制点，每个控制点对应一个时间tt
+      P.col(i - 1) = coeffMat * tt;
     }
-
-    //----------------------
-    //利用 BVP 解在均匀时间点采样，得到初始控制点 P，为后续优化提供合理的起点。
+    //t_bvp / N_：平均每段轨迹的时间
+    Dur_T.setConstant(t_bvp / N_);
+    //std::cout  << "Init Dur_T: " << Dur_T.transpose() << std::endl;
+    RealT2VirtualT(Dur_T, Virtual_T);
 
     // NOTE optimization
     lbfgs::lbfgs_parameter_t lbfgs_params;
@@ -484,18 +380,21 @@ namespace traj_opt
 
     //用于记录优化过程时间
     auto tic = std::chrono::steady_clock::now();
-    tictoc_innerloop_ = 0;
-    tictoc_integral_ = 0;
-    iter_times_ = 0;
 
     //第一个参数 优化变量个数
     //minObjective 存储最小函数值的变量
     //objectiveFunc 计算目标函数和梯度的函数
     //earlyExit 满足某些条件时退出优化的函数
     //lbfgs_params 自定义参数
-    opt_ret = lbfgs::lbfgs_optimize(dim_t_ + 3 * dim_p_, x_, &minObjective,
-                                    &objectiveFunc, nullptr,
-                                    &progressFunc, this, &lbfgs_params);
+    opt_ret = lbfgs::lbfgs_optimize(
+                        dim_t_ + 3 * dim_p_,
+                        x_, 
+                        &minObjective,
+                        TrajOpt::objectiveFunc, 
+                        nullptr,
+                        TrajOpt::progressFunc, 
+                        this, 
+                        &lbfgs_params);
 
     //用于记录优化过程时间
     auto toc = std::chrono::steady_clock::now();
@@ -508,10 +407,6 @@ namespace traj_opt
       std::cout << "traj opt err: " << err_msg << "optimization failed" << std::endl;
       delete[] x_;  
       return false;
-    }
-
-    if (pause_debug_) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
 
     // 计算优化后的时间步长和总时间
@@ -537,7 +432,6 @@ namespace traj_opt
     met.lbfgs_iters = iter_times_;
     met.final_objective = minObjective;
     met.max_omega = getMaxOmega(traj);
-    met.replan_t = t_replan;              // 记录是否是重规划
     met.method = "minco_lbfgs_piece" + std::to_string(N_);
     met.vio_p = violate_cost_.cost_p_;
     met.vio_v = violate_cost_.cost_v_;
@@ -549,8 +443,6 @@ namespace traj_opt
     met.vio_omega = violate_cost_.cost_omega_;
     appendMetricsToCsv(met, traj_csv_path_);
 
-    init_traj_ = traj;
-    initial_guess_ = true;
     delete[] x_;
     return true;
   }
@@ -670,35 +562,6 @@ namespace traj_opt
       }
     }
     cost += violate_cost_.total_cost();
-  }
-
-
-  TrajOpt::TrajOpt(ros::NodeHandle &nh)
-  {
-    nh.param("traj_opt/is_landing", is_landing_, false);
-    // nh.getParam("N", N_);
-    nh.param("traj_opt/K", K_, 16);
-    // load dynamic paramters
-    nh.param("traj_opt/vmax", vmax_, 3.0);
-    nh.param("traj_opt/amax", amax_, 3.0);
-    nh.param("traj_opt/jmax", jmax_, 3.0);
-    nh.param("traj_opt/omega_max", omega_max_, 3.0);
-    nh.param("traj_opt/rhoT", rhoT_, 100000.0);
-    nh.param("traj_opt/rhoP", rhoP_, 10000000.0);
-    nh.param("traj_opt/rhoV", rhoV_, 1000.0);
-    nh.param("traj_opt/rhoA", rhoA_, 1000.0);
-    nh.param("traj_opt/rhoJ", rhoJ_, 1000.0);
-    nh.param("traj_opt/rhoD", rho_D_, 100000.0);
-    nh.param("traj_opt/rhoC", rho_C_, 100000.0);
-    nh.param("traj_opt/rhoLV", rho_LV_, 100000.0);
-    nh.param("traj_opt/rhoOmega", rhoOmega_, 100000.0);
-    nh.param("traj_opt/LV_max", LV_max_, 0.5);
-    nh.param("traj_opt/LV_min", LV_min_, 0.1);
-    nh.param("traj_opt/emergency_stop_dist", emergency_stop_dist_, 1.0);
-    nh.param("traj_opt/safe_aera_radius", safe_aera_radius_, 0.2);
-    nh.param("traj_opt/collision_avoid_radius", collision_avoid_radius_, 0.8);
-    nh.param("traj_opt/pause_debug", pause_debug_, false);
-    visPtr_ = std::make_shared<vis_utils::VisUtils>(nh);
   }
 
   bool TrajOpt::StrongWindAreaGradCostP(const Eigen::Vector3d &p, Eigen::Vector3d &gradp, double &costp) {
