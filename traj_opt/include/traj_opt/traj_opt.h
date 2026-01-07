@@ -93,7 +93,7 @@ namespace traj_opt
         #endif
 
             std::ostringstream oss;
-            oss << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S");  // Windows 下不要用 :
+            oss << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S");
             return oss.str();
         }
 
