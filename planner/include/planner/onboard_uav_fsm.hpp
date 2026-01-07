@@ -99,18 +99,13 @@ private:
     void PrintOnboardUavState();
     void PrintUAVPosVel();
 
-    ros::Time docking_landing_start_time_; // 开始降落的时间
-    ros::Time final_landing_start_time_;   // 开始最终降落的时间
     ros::Time retry_start_time_;           // 开始重试的时间
-    // Eigen::Vector3d retry_pos_;            // 重试时的位置
-    // int retry_count_;                      // 重试次数
     bool is_docking_retry_;
 
 private:
     std::shared_ptr<vis_utils::VisUtils> vis_ptr_;    // 可视化指针
     std::shared_ptr<traj_opt::TrajOpt> traj_opt_ptr_; // 规划器指针
 
-    // Eigen::Vector3d uav_pos_, uav_vel_;       // 无人机位置，无人机速度
     Eigen::Vector3d target_pos_, target_vel_; // 目标位置，目标速度
     Eigen::Quaterniond target_q_;             // 目标姿态
 
@@ -149,12 +144,10 @@ private:
         double rec_ver_bias;                  // rec垂直接近高度
         double final_hor_bias;                // final水平距离容差
         double final_ver_bias;                // final垂直接近高度
-        double allowed_landing_time_s;        // 允许精准降落时间
-        double allowed_final_landing_time_s;  // 允许精准降落时间
         double allowed_retry_hover_time_s;    // 允许重试悬停时间
         double retry_climb_height;            // 重试爬升高度
         int allowed_retry_num;                // 允许重试次数
-        double z_control_dead;
+        double z_control_dead;                // z轴控制死区
     };
 
     struct msg_timeout
@@ -199,10 +192,6 @@ private:
         bool fly_away_test;
     };
 
-    int normal_minco_piece_;
-    int landing_minco_piece_;
-    bool is_landing_ = false;
-
     onboard_uav_param onboard_uav_param_;
     docking_param docking_param_;
     remote_guide_param remote_guide_param_;
@@ -210,12 +199,10 @@ private:
 
     ros::NodeHandle nh_;
     ros::Subscriber uav_state_sub_, uav_local_pose_sub_, m_uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_pose_sub_, uwb_distance_sub_;
-    // TODO  在socket通信中，需保证最少发送三次，才能保证消息被接收到
     ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_;
     ros::Publisher remote_ctrl_pub_, fsm_state_pub_;
     ros::ServiceClient arm_disarm_client_;
 
-    //lc add
     ros::Publisher px4_ctl_choose_,position_ctl_pub_;
     std_msgs::Int32 px4_choose_msg;
     mavros_msgs::PositionTarget P_target;; 
@@ -223,18 +210,15 @@ private:
     quadrotor_msgs::FsmState fsm_state_;
     quadrotor_msgs::GuidanceState guidance_state_;
 
-    //void Uwb_distance_callback(const nlink_parser::LinktrackNodeframe2 &msg);
     void Uwb_distance_callback(const std_msgs::Float64 msg); 
 
     void UavLocalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void UavLocalVelCallback(const geometry_msgs::TwistStamped::ConstPtr &msg);
     void M_UavLocalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-
     void UavStateCallback(const mavros_msgs::State::ConstPtr &msg);
     void UavOdomCallback(const nav_msgs::Odometry::ConstPtr &msg);
     void OnboardMsgCallback(const quadrotor_msgs::Onboard::ConstPtr &msg);
     void LandingTargetPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
-
     bool OdomIsReceived(const ros::Time &now_time);
     bool OnboardMsgIsReceived(const ros::Time &now_time);
     bool LandingTargetPoseIsReceived(const ros::Time &now_time);
@@ -245,7 +229,15 @@ private:
     void Pub_Guidance_State();
     bool Circle_Search();
     void Run_Search();
-    
+    void Remote_Guidance();
+    void geometric_estimate();
+    void iterate_estimate();
+    void PubOnboardMsg();
+    void PubOnboardUavState();
+    void UavDisarm();
+    void UpdataFsm(const ros::TimerEvent &event);
+    void FillLandingParams();
+
     mavros_msgs::State uav_state_;                                 // 无人机状态
     geometry_msgs::PoseStamped uav_local_pose_, m_uav_local_pose_; // 无人机本地位置
     geometry_msgs::TwistStamped uav_local_vel_;                    // 无人机本地速度
@@ -259,19 +251,9 @@ private:
     geometry_msgs::PoseStamped landing_target_pose_;               // 降落目标位置 local ENU
     bool is_landing_target_pose_updated_;                          // 判断降落目标位姿是否刷新
 
-    std::atomic_flag odom_lock_ = ATOMIC_FLAG_INIT;                // 里程计锁
-    std::atomic_flag onboard_msg_lock_ = ATOMIC_FLAG_INIT;         // 机载无人机信号锁
-    std::atomic_flag landing_target_pose_lock_ = ATOMIC_FLAG_INIT; // 降落目标位置锁
-
-    void PubOnboardMsg();
-    void PubOnboardUavState();
-
     bool perform_uav_disarm_;       // 是否上锁
     std::thread uav_disarm_thread_; // 无人机上锁线程
-    void UavDisarm();
-
     ros::Timer fsm_timer_; // 定时器
-    void UpdataFsm(const ros::TimerEvent &event);
     // 用 fsm_hz_ 控制状态机更新频率
     int fsm_hz_;        // 状态机更新频率
     int replan_hz_;     // 重新规划频率
@@ -279,15 +261,17 @@ private:
     bool is_first_run_; // 是否第一次运行该状态
     ros::Time replan_start_time_;
 
+    traj_opt::LandingParams land_params_;
+    int normal_minco_piece_;
+    int landing_minco_piece_;
+    bool is_landing_ = false;
 
-    //lc add
-    void Remote_Guidance();
-    //几何法估计
-    void geometric_estimate();
-    //迭代法估计
-    void iterate_estimate();
-
-    std::array<Eigen::Vector3d, 4> p_set;
+    std::array<Eigen::Vector3d, 4> p_set = {
+        Eigen::Vector3d::Zero(),
+        Eigen::Vector3d::Zero(),
+        Eigen::Vector3d::Zero(), 
+        Eigen::Vector3d::Zero()
+    };
 
     std::array<Eigen::Vector3d, 4> pre_vio_p = {
         Eigen::Vector3d::Zero(),
@@ -297,22 +281,14 @@ private:
     };
     double uwb_distance = 0.f;
     
-    Eigen::Vector3d dock_r2m;
-
-    //几何法子机相对于对接点的估计位置
+    Eigen::Vector3d dock_r2m = Eigen::Vector3d::Zero();
     Eigen::Vector3d geo_est_c2d = Eigen::Vector3d::Zero();
     Eigen::Vector3d ite_c2d_q = Eigen::Vector3d::Zero();
     Eigen::Vector3d ite_est_p = Eigen::Vector3d::Zero();
     int ite_k = 0;
-    //uwb测量四点距离
     double pre_uwb_d[4] = {0,0,0,0};
-
-    //远程引导标志位
     int rg_flag = 0;
-
     Eigen::Vector2d circle_search_target = Eigen::Vector2d(0.0, 0.0);   
     bool search_flag = false;
 
-    traj_opt::LandingParams land_params_;
-    void FillLandingParams();
 };

@@ -27,8 +27,6 @@
         <param name="docking/final_hor_bias" type="double" value="0.1" />
         <param name="docking/final_ver_bias" type="double" value="0.15" />
         <param name="docking/z_control_dead" type="double" value="0.0" />
-        <param name="docking/allowed_landing_time_s" type="double" value="300.0" />
-        <param name="docking/allowed_final_landing_time_s" type="double" value="30.0" />
         <param name="docking/allowed_retry_hover_time_s" type="double" value="3.0" />
         <param name="docking/retry_climb_height" type="double" value="2.0" />
         <param name="docking/allowed_retry_num" type="int" value="10" />
@@ -92,7 +90,6 @@
         <param name="traj_opt/emergency_stop_dist" value="1.5"/>
         <param name="traj_opt/safe_aera_radius" value="0.15"/>
         <param name="traj_opt/collision_avoid_radius" value="1.2"/>
-
 
     <node pkg="planner" type="traj_server_node" name="traj_server_node" output="screen" />
 
