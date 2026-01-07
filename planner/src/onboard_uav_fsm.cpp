@@ -1379,106 +1379,106 @@ void OnboardUavFsm::RunDockingRetry()
 
     switch (retry_state_)
     {
-    case RetryStates::INIT:
-    {
-        hover_flag_ = false;
-        is_first_run_ = true;
-        retry_start_time_ = ros::Time::now();
-        retry_state_ = RetryStates::HOVER_SEARCH;
-        ROS_INFO("\033[32mDOCKING_RETRY: Switch to HOVER_SEARCH\033[0m");
-        break;
-    }
-    case RetryStates::HOVER_SEARCH:
-    {
-        // 当再次获取到降落目标位置时，重新进入降落状态
-        if (LandingTargetPoseIsReceived(ros::Time::now()))
+        case RetryStates::INIT:
         {
-            ROS_INFO("\033[32mDOCKING_RETRY: Target detected!\033[0m");
+            hover_flag_ = false;
             is_first_run_ = true;
-            landing_state_ = LandingStates::DESCEND_ABOVE_TARGET;
-            docking_state_ = DockingStates::LANDING;
-            ROS_INFO("\033[32mDOCKING_RETRY: Switch to DOCKING LANDING\033[0m");
+            retry_start_time_ = ros::Time::now();
+            retry_state_ = RetryStates::HOVER_SEARCH;
+            ROS_INFO("\033[32mDOCKING_RETRY: Switch to HOVER_SEARCH\033[0m");
             break;
         }
-        // 当重试悬停超时时，进入重试爬升状态，重试次数减一
-        if ((ros::Time::now() - retry_start_time_).toSec() > docking_param_.allowed_retry_hover_time_s)
+        case RetryStates::HOVER_SEARCH:
         {
-            is_first_run_ = true;
-            docking_param_.allowed_retry_num--;
+            // 当再次获取到降落目标位置时，重新进入降落状态
+            if (LandingTargetPoseIsReceived(ros::Time::now()))
+            {
+                ROS_INFO("\033[32mDOCKING_RETRY: Target detected!\033[0m");
+                is_first_run_ = true;
+                landing_state_ = LandingStates::DESCEND_ABOVE_TARGET;
+                docking_state_ = DockingStates::LANDING;
+                ROS_INFO("\033[32mDOCKING_RETRY: Switch to DOCKING LANDING\033[0m");
+                break;
+            }
+            // 当重试悬停超时时，进入重试爬升状态，重试次数减一
+            if ((ros::Time::now() - retry_start_time_).toSec() > docking_param_.allowed_retry_hover_time_s)
+            {
+                is_first_run_ = true;
+                docking_param_.allowed_retry_num--;
+
+                target_pos_ = uav_odom_pos_;
+                target_pos_.z() += docking_param_.retry_climb_height;
+                target_vel_ = Eigen::Vector3d::Zero();
+                target_q_ = Eigen::Quaterniond::Identity(); // TODO 当前姿态
+                retry_state_ = RetryStates::CLIMBING;
+                ROS_INFO("\033[32mDOCKING_RETRY: Switch to CLIMBING\033[0m");
+                // DEBUG 打印目标位姿
+                //PrintUAVPosVel();
+                break;
+            }
 
             target_pos_ = uav_odom_pos_;
-            target_pos_.z() += docking_param_.retry_climb_height;
-            target_vel_ = Eigen::Vector3d::Zero();
-            target_q_ = Eigen::Quaterniond::Identity(); // TODO 当前姿态
-            retry_state_ = RetryStates::CLIMBING;
-            ROS_INFO("\033[32mDOCKING_RETRY: Switch to CLIMBING\033[0m");
-            // DEBUG 打印目标位姿
-            //PrintUAVPosVel();
+
+            if (PlanTrajectory()) {
+                is_replan_ = false;
+                // 打印目标位姿
+                // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+            }
+            ROS_INFO("DOCKING_RETRY: Hover");
+
             break;
         }
 
-        target_pos_ = uav_odom_pos_;
-
-        if (PlanTrajectory()) {
-            is_replan_ = false;
-            // 打印目标位姿
-            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        }
-        ROS_INFO("DOCKING_RETRY: Hover");
-
-        break;
-    }
-
-    case RetryStates::CLIMBING:
-    {
-        // 当再次获取到降落目标位置时，重新进入降落状态
-        if (LandingTargetPoseIsReceived(ros::Time::now()))
+        case RetryStates::CLIMBING:
         {
-            ROS_INFO("\033[32mDOCKING_RETRY: Target detected!\033[0m");
-            is_first_run_ = true;
-            landing_state_ = LandingStates::DESCEND_ABOVE_TARGET;
-            docking_state_ = DockingStates::LANDING;
-            ROS_INFO("\033[32mDOCKING_RETRY: Switch to DOCKING LANDING\033[0m");
+            // 当再次获取到降落目标位置时，重新进入降落状态
+            if (LandingTargetPoseIsReceived(ros::Time::now()))
+            {
+                ROS_INFO("\033[32mDOCKING_RETRY: Target detected!\033[0m");
+                is_first_run_ = true;
+                landing_state_ = LandingStates::DESCEND_ABOVE_TARGET;
+                docking_state_ = DockingStates::LANDING;
+                ROS_INFO("\033[32mDOCKING_RETRY: Switch to DOCKING LANDING\033[0m");
+                break;
+            }
+
+            // 当重试次数为零时，进入故障保护状态
+            if (docking_param_.allowed_retry_num <= 0)
+            {
+                ROS_ERROR("DOCKING_RETRY: Allowed retry num used up!");
+                onboard_uav_state_ = OnboardUavStates::FAIL_SAFE;
+                ROS_INFO("\033[32mDOCKING_RETRY: Switch to FAIL_SAFE\033[0m");
+                break;
+            }
+
+            // 当重试爬升到指定位置时，重新进入远程引导状态
+            if ((uav_odom_pos_ - target_pos_).norm() < 0.3)
+            {
+                // 使用返航位置，母机指令中允许返航以及允许精准降落中的位置一样
+                target_pos_.x() = onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0];
+                target_pos_.y() = onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1];
+                target_pos_.z() = onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2] + docking_param_.return_pos_offset[2];
+                target_vel_ = Eigen::Vector3d::Zero();
+                target_q_ = Eigen::Quaterniond::Identity();
+
+                hover_flag_ = false;
+                // is_first_run_ = true;
+                docking_state_ = DockingStates::INIT;
+                ROS_INFO("\033[32mDOCKING_RETRY: Switch to DOCKING IDLE\033[0m");
+                // DEBUG 打印目标位姿
+                //PrintUAVPosVel();
+                break;
+            }
+
+            // 爬升到指定位置
+            if (PlanTrajectory())
+            {
+                is_replan_ = false;
+                // 打印目标位姿
+                // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
+            }
             break;
         }
-
-        // 当重试次数为零时，进入故障保护状态
-        if (docking_param_.allowed_retry_num <= 0)
-        {
-            ROS_ERROR("DOCKING_RETRY: Allowed retry num used up!");
-            onboard_uav_state_ = OnboardUavStates::FAIL_SAFE;
-            ROS_INFO("\033[32mDOCKING_RETRY: Switch to FAIL_SAFE\033[0m");
-            break;
-        }
-
-        // 当重试爬升到指定位置时，重新进入远程引导状态
-        if ((uav_odom_pos_ - target_pos_).norm() < 0.3)
-        {
-            // 使用返航位置，母机指令中允许返航以及允许精准降落中的位置一样
-            target_pos_.x() = onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0];
-            target_pos_.y() = onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1];
-            target_pos_.z() = onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2] + docking_param_.return_pos_offset[2];
-            target_vel_ = Eigen::Vector3d::Zero();
-            target_q_ = Eigen::Quaterniond::Identity();
-
-            hover_flag_ = false;
-            // is_first_run_ = true;
-            docking_state_ = DockingStates::INIT;
-            ROS_INFO("\033[32mDOCKING_RETRY: Switch to DOCKING IDLE\033[0m");
-            // DEBUG 打印目标位姿
-            //PrintUAVPosVel();
-            break;
-        }
-
-        // 爬升到指定位置
-        if (PlanTrajectory())
-        {
-            is_replan_ = false;
-            // 打印目标位姿
-            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        }
-        break;
-    }
     }
     return;
 }
