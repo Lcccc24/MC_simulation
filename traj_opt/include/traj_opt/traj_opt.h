@@ -97,8 +97,8 @@ namespace traj_opt
             return oss.str();
         }
 
-        std::string iter_csv_path_ = "/home/lc/mc_simu_ws/lbfgs_iter_metrics_" + nowTimeString() + ".csv";
-        std::string traj_csv_path_ = "/home/lc/mc_simu_ws/traj_metrics_" + nowTimeString() + ".csv";
+        std::string iter_csv_path_ = "/home/lc/mc_simu_ws/record/lbfgs_iter_metrics_" + nowTimeString() + ".csv";
+        std::string traj_csv_path_ = "/home/lc/mc_simu_ws/record/traj_metrics_" + nowTimeString() + ".csv";
 
     public:
         TrajOpt(ros::NodeHandle &nh);
