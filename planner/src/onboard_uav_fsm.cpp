@@ -1524,7 +1524,7 @@ bool OnboardUavFsm::PlanTrajectory()
         start_state.col(3) = poly_traj_.getJer(replan_time);
     }
 
-    bool is_success = traj_opt_ptr_->generate_traj(start_state, target_pos_, target_vel_, N, poly_traj_);
+    bool is_success = traj_opt_ptr_->generate_minco_traj(start_state, target_pos_, target_vel_, N, poly_traj_);
     if (is_success)
     {
         is_first_run_ = false;

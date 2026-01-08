@@ -6,6 +6,7 @@
 #include <vis_utils/vis_utils.hpp>
 
 #include "minco.hpp"
+#include "bspline.hpp"
 
 namespace traj_opt
 {
@@ -34,6 +35,7 @@ namespace traj_opt
         double emergency_stop_dist_, safe_aera_radius_, collision_avoid_radius_;
         double omega_max_;
         minco::MINCO_S4 mincoOpt_;
+        bspline::Bspline_P5 BsplineOpt;
         Eigen::MatrixXd initS_;
         double *x_;
 
@@ -93,7 +95,7 @@ namespace traj_opt
         #endif
 
             std::ostringstream oss;
-            oss << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S");
+            oss << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S");  // Windows 下不要用 :
             return oss.str();
         }
 
@@ -138,11 +140,17 @@ namespace traj_opt
 
         void setLandingParams(const LandingParams &lp);
 
-        bool generate_traj(const Eigen::MatrixXd &iniState,
+        bool generate_minco_traj(const Eigen::MatrixXd &iniState,
                             const Eigen::Vector3d &car_p,
                             const Eigen::Vector3d &car_v,
                             const int &N,
                             Trajectory &traj);
+
+        bool generate_bspline_traj(const Eigen::MatrixXd &iniState,
+                    const Eigen::Vector3d &car_p,
+                    const Eigen::Vector3d &car_v,
+                    const int &N,
+                    Trajectory &traj);
 
         static int progressFunc(void *ptrObj,
                                 const double *x,

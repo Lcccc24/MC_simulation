@@ -294,13 +294,13 @@ namespace traj_opt
   t_replan: 重规划时间 t_replan默认为-1时，不进行重规划
   traj: 轨迹对象，用于存储生成的轨迹信息
   */
-  bool TrajOpt::generate_traj(const Eigen::MatrixXd &iniState,
+  bool TrajOpt::generate_minco_traj(const Eigen::MatrixXd &iniState,
                               const Eigen::Vector3d &car_p,
                               const Eigen::Vector3d &car_v,
                               const int &N,
                               Trajectory &traj)
   {
-    N_ = N;
+    N_ = N;  
     //时间维度
     dim_t_ = N_;
     //位置控制点的数量（轨迹用 N-1 个控制点表示）
@@ -768,5 +768,139 @@ namespace traj_opt
     gradp = rho_C_ * dp * -2 * p_err;
     return true;
   }
+
+  // bool TrajOpt::generate_bspline_traj(const Eigen::MatrixXd &iniState,
+  //                                     const Eigen::Vector3d &car_p,
+  //                                     const Eigen::Vector3d &car_v,
+  //                                     const int &N,
+  //                                     Bspline_P5 &spline_out)
+  // {
+  //   // -------- 0) cache inputs ----------
+  //   car_p_ = car_p;
+  //   car_v_ = car_v;
+  //   initS_ = iniState;
+  //   N_ = N;
+
+  //   // -------- 1) build an initial BVP trajectory & decide total time ----------
+  //   Eigen::MatrixXd bvp_i = initS_;
+  //   Eigen::MatrixXd bvp_f(3, 4);
+  //   bvp_f.col(0) = car_p_;
+  //   bvp_f.col(1) = car_v_;
+  //   bvp_f.col(2).setZero();
+  //   bvp_f.col(3).setZero();
+
+  //   double t_bvp = (bvp_f.col(0) - bvp_i.col(0)).norm() / vmax_;
+  //   CoefficientMat coeffMat;
+  //   double max_omega = 0.0;
+
+  //   do {
+  //     t_bvp += 1.0;
+  //     bvp_f.col(0) = car_p_ + car_v_ * t_bvp;
+  //     bvp(t_bvp, bvp_i, bvp_f, coeffMat);
+
+  //     std::vector<double> durs{t_bvp};
+  //     std::vector<CoefficientMat> coeffs{coeffMat};
+  //     Trajectory tmp_traj(durs, coeffs);
+
+  //     // 用 poly sampler 评估 omega（需要你有 PolyTrajSampler）
+  //     // PolyTrajSampler polyS(tmp_traj);
+  //     // max_omega = getMaxOmega(polyS);
+
+  //     // 如果你暂时还没改 sampler，这里先用你旧的 getMaxOmega(tmp_traj)
+  //     max_omega = getMaxOmega(tmp_traj);   // TODO: 等你统一 sampler 后换掉
+
+  //     bvp_traj_ = tmp_traj;
+  //   } while (max_omega > 1.5 * omega_max_);
+
+  //   const double total_t = t_bvp;
+
+  //   // -------- 2) choose spline params ----------
+  //   const int order = 5;               // 五次（jerk连续）
+  //   const int M = std::max(N_ + order, order + 6); // 控制点数（列数），可自行调整
+  //   const int K = M - 2;               // parameterizeToBspline 需要 point_set.size() = K (>=4)
+  //   if (K < 4) {
+  //     std::cout << "[Bspline] K too small." << std::endl;
+  //     return false;
+  //   }
+
+  //   const double ts = total_t / (K - 1);     // 采样间隔，也作为 knot interval 初值
+
+  //   // -------- 3) sample points from initial (BVP) trajectory ----------
+  //   std::vector<Eigen::Vector3d> point_set;
+  //   point_set.reserve(K);
+
+  //   for (int i = 0; i < K; ++i) {
+  //     double t = i * ts;
+
+  //     // TODO: 用你 Trajectory 的取位置函数替换
+  //     // Eigen::Vector3d p = bvp_traj_.getPos(t);
+
+  //     Eigen::Vector3d p = bvp_traj_.getPos(t);  // 你若没有这个接口就改成你实际接口
+  //     point_set.push_back(p);
+  //   }
+
+  //   // 强制最后一点为“移动目标在 total_t 时刻的位置”
+  //   point_set.back() = car_p_ + car_v_ * total_t;
+
+  //   // -------- 4) boundary derivatives for parameterizeToBspline ----------
+  //   // start_end_derivative size must be 4 (your code checks that).
+  //   std::vector<Eigen::Vector3d> der(4);
+  //   der[0] = initS_.col(1);                 // start vel
+  //   der[1] = car_v_;                        // end vel
+  //   der[2] = initS_.col(2);                 // start acc (or zero if unavailable)
+  //   der[3] = Eigen::Vector3d::Zero();       // end acc (can be tuned)
+
+  //   // -------- 5) parameterize to get initial control points ----------
+  //   Eigen::MatrixXd ctrl_pts; // 3 x (K+2) == 3 x M
+  //   {
+  //     bspline::Bspline_P5 tmp;
+  //     tmp.parameterizeToBspline(ts, point_set, der, ctrl_pts);
+  //   }
+
+  //   if (ctrl_pts.rows() != 3 || ctrl_pts.cols() != K + 2) {
+  //     std::cout << "[Bspline] ctrl_pts size mismatch." << std::endl;
+  //     return false;
+  //   }
+
+  //   // -------- 6) create spline & enforce feasibility by time scaling ----------
+  //   Bspline_P5 Bspline_P5(ctrl_pts, order, ts);
+  //   Bspline_P5.setPhysicalLimits(vmax_, amax_, 0.05);
+
+  //   double ratio = 1.0;
+  //   int fea_iter = 0;
+  //   while (!spline.checkFeasibility(ratio, false) && fea_iter++ < 10) {
+  //     spline.lengthenTime(std::max(ratio, 1.05));
+  //   }
+
+  //   // -------- 7) (Optional) optimize control points via L-BFGS ----------
+  //   // 为了先跑通对比，这里先不做 L-BFGS 控制点优化；你想要的话我下面给你完整骨架。
+  //   // spline_out = optimized spline
+  //   spline_out = spline;
+
+  //   // -------- 8) unified evaluation (建议你尽快改成 sampler 版本) ----------
+  //   BsplineTrajSampler bsS(spline_out);
+
+  //   auto tic = std::chrono::steady_clock::now();
+  //   TrajMetrics met = evaluateTrajectory(bsS, N_, is_landing_, 0.01 /*100Hz*/, 5);
+  //   auto toc = std::chrono::steady_clock::now();
+
+  //   met.success = true;
+  //   met.opt_time_ms = std::chrono::duration<double, std::milli>(toc - tic).count();
+  //   met.lbfgs_iters = 0;
+  //   met.final_objective = spline_out.getJerk();   // 或你定义的代价
+  //   met.max_omega = getMaxOmega(bsS);
+  //   met.method = "bspline_init_order" + std::to_string(order) + "_M" + std::to_string(M);
+
+  //   // 如果你的 violate_cost_ 已经改成吃 sampler，就直接：
+  //   // violate_cost_.evaluate(bsS, ...); 并填 met.vio_*
+  //   // 这里先保留为 0
+  //   met.vio_p = 0; met.vio_v = 0; met.vio_a = 0; met.vio_j = 0;
+  //   met.vio_d = 0; met.vio_l = 0; met.vio_c = 0; met.vio_omega = 0;
+
+  //   appendMetricsToCsv(met, traj_csv_path_);
+
+  //   return true;
+  // }
+
 
 } // namespace traj_opt
