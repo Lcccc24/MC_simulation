@@ -162,6 +162,8 @@ private:
         double dock_r2m_x;
         double dock_r2m_y;
         double dock_r2m_z;
+        double res_gate_max;
+        double res_gate_rms;
         int mean_cnt;
         double reach_target_thr;
         int settle_cnt;
@@ -205,8 +207,35 @@ private:
     quadrotor_msgs::FsmState fsm_state_;
     quadrotor_msgs::GuidanceState guidance_state_;
 
-    void Uwb_distance_callback(const std_msgs::Float64 msg); 
+    struct RangeSample {
+        Eigen::Vector3d p_local;
+        double r;
+        ros::Time stamp;
+    };
 
+    bool rg_first_ref_inited_ = false;
+    bool rg_base_inited_      = false;
+
+    Eigen::Vector3d rg_first_ref_world_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d rg_base_pos_local_ = Eigen::Vector3d::Zero();
+    int rg_stage_ = 0;
+
+    std::deque<RangeSample> rg_anchors_win_;
+
+    bool   rg_have_solution_ = false;
+    double rg_last_rms_res_  = std::numeric_limits<double>::infinity();
+    double rg_last_max_res_  = std::numeric_limits<double>::infinity();
+
+    bool rg_have_mother_world_ = false;
+    Eigen::Vector3d rg_last_mother_world_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d est_dock_world = Eigen::Vector3d::Zero();
+    Eigen::Vector3d dock_r2m = Eigen::Vector3d::Zero();
+
+    double uwb_distance = 0.f;
+    Eigen::Vector2d circle_search_target = Eigen::Vector2d(0.0, 0.0);   
+    bool search_flag = false;
+
+    void Uwb_distance_callback(const std_msgs::Float64 msg); 
     void UavLocalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void UavLocalVelCallback(const geometry_msgs::TwistStamped::ConstPtr &msg);
     void M_UavLocalPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
@@ -225,7 +254,7 @@ private:
     bool Circle_Search();
     void Run_Search();
     void Remote_Guidance();
-    bool geometric_estimate(Eigen::Vector3d& est_local, Eigen::Vector3d& est_world, double& max_residual);
+    bool estimate_mother_from_window(const std::deque<RangeSample>& win, Eigen::Vector3d& mother_local, double& max_residual, double& rms_residual);
     void PubOnboardMsg();
     void PubOnboardUavState();
     void UavDisarm();
@@ -259,27 +288,5 @@ private:
     int normal_minco_piece_;
     int landing_minco_piece_;
     bool is_landing_ = false;
-
-    std::array<Eigen::Vector3d, 4> p_set = {
-        Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero(), 
-        Eigen::Vector3d::Zero()
-    };
-
-    std::array<Eigen::Vector3d, 4> pre_vio_p = {
-        Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero(), 
-        Eigen::Vector3d::Zero()
-    };
-    double uwb_distance = 0.f;
-    
-    Eigen::Vector3d dock_r2m = Eigen::Vector3d::Zero();
-    Eigen::Vector3d geo_est_c2d = Eigen::Vector3d::Zero();
-    Eigen::Vector3d first_ref_world = Eigen::Vector3d::Zero();
-    double pre_uwb_d[4] = {0,0,0,0};
-    Eigen::Vector2d circle_search_target = Eigen::Vector2d(0.0, 0.0);   
-    bool search_flag = false;
 
 };
