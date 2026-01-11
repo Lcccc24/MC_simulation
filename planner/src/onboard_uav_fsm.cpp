@@ -35,6 +35,8 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("remote_guide/mean_cnt", remote_guide_param_.mean_cnt, 30);
     nh.param("remote_guide/reach_target_thr", remote_guide_param_.reach_target_thr, 0.2);
     nh.param("remote_guide/settle_cnt", remote_guide_param_.settle_cnt, 20);
+    nh.param("remote_guide/res_gate_max", remote_guide_param_.res_gate_max, 0.5);
+    nh.param("remote_guide/res_gate_rms", remote_guide_param_.res_gate_rms, 0.6);
     nh.param("remote_guide/exit_dist_thr", remote_guide_param_.exit_dist_thr, 0.5);
     nh.param("remote_guide/exit_res_thr", remote_guide_param_.exit_res_thr, 0.05);
     nh.param("remote_guide/step_gamma", remote_guide_param_.step_gamma, 0.05);
@@ -140,19 +142,6 @@ void OnboardUavFsm::Init()
     dock_r2m.x() = remote_guide_param_.dock_r2m_x;
     dock_r2m.y() = remote_guide_param_.dock_r2m_y;
     dock_r2m.z() = remote_guide_param_.dock_r2m_z;
-
-    p_set[0].x() = remote_guide_param_.p_set_1_x;
-    p_set[0].y() = remote_guide_param_.p_set_1_y;
-    p_set[0].z() = remote_guide_param_.p_set_1_z;
-    p_set[1].x() = remote_guide_param_.p_set_2_x;
-    p_set[1].y() = remote_guide_param_.p_set_2_y;
-    p_set[1].z() = remote_guide_param_.p_set_2_z;
-    p_set[2].x() = remote_guide_param_.p_set_3_x;
-    p_set[2].y() = remote_guide_param_.p_set_3_y;
-    p_set[2].z() = remote_guide_param_.p_set_3_z;
-    p_set[3].x() = remote_guide_param_.p_set_4_x;
-    p_set[3].y() = remote_guide_param_.p_set_4_y;
-    p_set[3].z() = remote_guide_param_.p_set_4_z;
 
     px4_choose_msg.data = 0;
     px4_ctl_choose_.publish(px4_choose_msg);
@@ -692,62 +681,133 @@ void OnboardUavFsm::RunMissionMode()
         return;
 }
 
-//lc add
-/**
- * @brief 远程引导模式
- */
 void OnboardUavFsm::Remote_Guidance()
-{   
-    //PUB FLAG
+{
     Pub_Guidance_State();
 
-    static int point_idx = 0;
-    static int hover_cnt = 0;
-    static int sample_cnt = 0;
-    static int round_idx = 0;
+    const int WIN_ANCHOR_N = 4;
 
-    static bool first_ref_inited = false;
-    static bool base_inited = false;
-    static Eigen::Vector3d base_pos_local = Eigen::Vector3d::Zero();
+    static int settle_cnt = 0;
+    static int mean_cnt   = 0;
 
-    // 确保索引 i 在 p_set 的范围内
-    if (p_set.size() != 4) {
-        ROS_ERROR("[RG] p_set size (%ld) < 4", p_set.size());
-        return;
+    static std::vector<double> r_buf;
+    static std::vector<Eigen::Vector3d> p_buf_world;
+
+    if (!rg_first_ref_inited_) {
+        rg_first_ref_world_ = uav_odom_pos_;
+        rg_first_ref_inited_ = true;
+        ROS_INFO("[RG] rg_first_ref_world_ (from uav_odom_pos_)=(%.3f,%.3f,%.3f)",
+                 rg_first_ref_world_.x(), rg_first_ref_world_.y(), rg_first_ref_world_.z());
     }
 
-    if (!first_ref_inited) {
-        first_ref_world = Eigen::Vector3d(
-            onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0],
-            onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1],
-            onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2]
-        );
-        first_ref_inited = true;
+    if (!rg_base_inited_) {
+        rg_base_inited_ = true;
 
-        ROS_INFO("[RG] first_ref_world=(%.3f,%.3f,%.3f)",
-                 first_ref_world.x(), first_ref_world.y(), first_ref_world.z());
+        rg_base_pos_local_.setZero();
+        rg_stage_ = 0;
+
+        settle_cnt = 0;
+        mean_cnt   = 0;
+        r_buf.clear();
+        p_buf_world.clear();
+
+        rg_anchors_win_.clear();
+
+        rg_have_solution_ = false;
+        rg_last_rms_res_  = std::numeric_limits<double>::infinity();
+        rg_last_max_res_  = std::numeric_limits<double>::infinity();
+
+        rg_have_mother_world_ = false;
+        rg_last_mother_world_.setZero();
+
+        ROS_INFO("[RG] init base_pos_local=(0,0,0), stage=0");
     }
 
-    if (!base_inited) {
-        base_pos_local.setZero();
-        base_inited = true;
-        point_idx = 0;
-        hover_cnt = 0;
-        sample_cnt = 0;
-        round_idx = 0;
-
-        for (int j = 0; j < 4; ++j) {
-            pre_uwb_d[j] = 0.0;
-            pre_vio_p[j].setZero();
+    auto pattern_local = [&](int i)->Eigen::Vector3d {
+        switch(i){
+            case 0: return Eigen::Vector3d(remote_guide_param_.p_set_1_x,
+                                           remote_guide_param_.p_set_1_y,
+                                           remote_guide_param_.p_set_1_z);
+            case 1: return Eigen::Vector3d(remote_guide_param_.p_set_2_x,
+                                           remote_guide_param_.p_set_2_y,
+                                           remote_guide_param_.p_set_2_z);
+            case 2: return Eigen::Vector3d(remote_guide_param_.p_set_3_x,
+                                           remote_guide_param_.p_set_3_y,
+                                           remote_guide_param_.p_set_3_z);
+            default:return Eigen::Vector3d(remote_guide_param_.p_set_4_x,
+                                           remote_guide_param_.p_set_4_y,
+                                           remote_guide_param_.p_set_4_z);
         }
-        ROS_INFO("[RG] init base_pos_local=(0,0,0)");
-    }
+    };
 
-    if (point_idx < 0) point_idx = 0;
-    if (point_idx > 3) point_idx = 0;
+    const Eigen::Vector3d dock_r2m(remote_guide_param_.dock_r2m_x,
+                                   remote_guide_param_.dock_r2m_y,
+                                   remote_guide_param_.dock_r2m_z);
 
-    const Eigen::Vector3d local_target = base_pos_local + p_set[point_idx];
-    target_pos_ = first_ref_world + local_target;
+    auto solve_and_step_from_anchors = [&]() -> bool
+    {
+        if ((int)rg_anchors_win_.size() < WIN_ANCHOR_N) return false;
+
+        Eigen::Vector3d mother_local, mother_world;
+        double max_res = 0.0, rms_res = 0.0;
+
+        if (!estimate_mother_from_window(rg_anchors_win_, mother_local, max_res, rms_res)) {
+            ROS_WARN("[RG] estimate failed (anchors_win=4).");
+            rg_have_solution_ = false;
+            rg_last_max_res_  = std::numeric_limits<double>::infinity();
+            rg_last_rms_res_  = std::numeric_limits<double>::infinity();
+
+            rg_have_mother_world_ = false;
+            return false;
+        }
+
+        rg_have_solution_ = true;
+        rg_last_max_res_  = max_res;
+        rg_last_rms_res_  = rms_res;
+
+        mother_world = rg_first_ref_world_ + mother_local;
+
+        rg_last_mother_world_ = mother_world;
+        rg_have_mother_world_ = true;
+
+        const Eigen::Vector3d dock_world = mother_world + dock_r2m;  // mother->dock
+        const Eigen::Vector3d dock_local = dock_world - rg_first_ref_world_;
+
+        ROS_INFO("[RG] solve@anchors: mother_world=(%.3f,%.3f,%.3f) dock_world=(%.3f,%.3f,%.3f) max_res=%.3f rms=%.3f",
+                 mother_world.x(), mother_world.y(), mother_world.z(),
+                 dock_world.x(), dock_world.y(), dock_world.z(),
+                 max_res, rms_res);
+
+        Eigen::Vector3d dir = dock_local - rg_base_pos_local_;
+        double dist_to_dock = dir.norm();
+        if (dist_to_dock > 1e-3) {
+            dir /= dist_to_dock;
+
+            double step = remote_guide_param_.step_gamma * dist_to_dock;
+            step = std::max(remote_guide_param_.step_min,
+                            std::min(step, remote_guide_param_.step_max));
+
+            const bool pass_gate =
+                (max_res < remote_guide_param_.res_gate_max) &&
+                (rms_res < remote_guide_param_.res_gate_rms);
+
+            if (pass_gate) {
+                rg_base_pos_local_ += step * dir;
+                ROS_INFO("[RG] base update(to dock): step=%.3f -> base_local=(%.3f,%.3f,%.3f)",
+                         step, rg_base_pos_local_.x(), rg_base_pos_local_.y(), rg_base_pos_local_.z());
+            } else {
+                ROS_WARN("[RG] skip base update: max_res=%.3f (gate %.3f), rms=%.3f (gate %.3f)",
+                         max_res, remote_guide_param_.res_gate_max,
+                         rms_res, remote_guide_param_.res_gate_rms);
+            }
+        }
+        return true;
+    };
+
+    const Eigen::Vector3d sp_local = rg_base_pos_local_ + pattern_local(rg_stage_);
+    const Eigen::Vector3d sp_world = rg_first_ref_world_ + sp_local;
+
+    target_pos_ = sp_world;
     target_vel_ = Eigen::Vector3d::Zero();
     target_q_   = Eigen::Quaterniond::Identity();
     hover_flag_ = false;
@@ -756,139 +816,255 @@ void OnboardUavFsm::Remote_Guidance()
         is_replan_ = false;
     }
 
-    if ((uav_odom_pos_ - target_pos_).norm() >= remote_guide_param_.reach_target_thr) {
-        return;
-    }
+    const double reach_thr  = std::max(0.05, remote_guide_param_.reach_target_thr);
+    const double dist_to_sp = (uav_odom_pos_ - sp_world).norm();
 
-    ROS_INFO("PREVIEW POINT:%d, ROUND:%d", point_idx + 1, round_idx + 1);
-    hover_cnt++;
+    const int need_settle = std::max(1, remote_guide_param_.settle_cnt);
+    const int need_mean   = std::max(1, remote_guide_param_.mean_cnt);
 
-    if (hover_cnt <= remote_guide_param_.settle_cnt) {
-        return;
-    }
+    bool formed_anchor = false;
 
-    if (sample_cnt < remote_guide_param_.mean_cnt) {
-        sample_cnt++;
-        pre_uwb_d[point_idx] += uwb_distance;
+    if (dist_to_sp < reach_thr) {
 
-        const Eigen::Vector3d local_meas = uav_odom_pos_ - first_ref_world;
-        pre_vio_p[point_idx] += local_meas;
-        return;
-    }
+        settle_cnt++;
 
-    pre_uwb_d[point_idx] /= static_cast<double>(remote_guide_param_.mean_cnt);
-    pre_vio_p[point_idx] /= static_cast<double>(remote_guide_param_.mean_cnt);
+        if (settle_cnt < need_settle) {
 
-    ROS_INFO("[RG] P%d done: UWB=%.3f, VIO_local=(%.3f,%.3f,%.3f)",
-             point_idx + 1, pre_uwb_d[point_idx],
-             pre_vio_p[point_idx].x(), pre_vio_p[point_idx].y(), pre_vio_p[point_idx].z());
+            mean_cnt = 0;
+            r_buf.clear();
+            p_buf_world.clear();
 
-    point_idx++;
-    hover_cnt = 0;
-    sample_cnt = 0;
+            ROS_INFO_THROTTLE(0.2,
+                "[RG] stage=%d settling %d/%d dist_to_sp=%.3f (no sampling yet)",
+                rg_stage_, settle_cnt, need_settle, dist_to_sp);
 
-    if (point_idx < 4) {
-        return;
-    }
+        } else {
 
-    Eigen::Vector3d mother_local, mother_world;
-    double max_res = 0.0;
+            r_buf.push_back(uwb_distance);
+            p_buf_world.push_back(uav_odom_pos_);
+            mean_cnt++;
 
-    const bool ok = geometric_estimate(mother_local, mother_world, max_res);
-    if (!ok) {
-        ROS_WARN("[RG] geometric_estimate failed. Restart round without base update.");
+            ROS_INFO_THROTTLE(0.2,
+                "[RG] stage=%d holding %d/%d uwb=%.3f dist_to_sp=%.3f",
+                rg_stage_, mean_cnt, need_mean, uwb_distance, dist_to_sp);
+
+            if (mean_cnt >= need_mean) {
+
+                double sum = 0.0;
+                for (double v : r_buf) sum += v;
+                const double r_mean = sum / std::max(1, (int)r_buf.size());
+
+                Eigen::Vector3d p_sum = Eigen::Vector3d::Zero();
+                for (const auto& pw : p_buf_world) p_sum += pw;
+                Eigen::Vector3d p_mean_world = p_sum / std::max(1, (int)p_buf_world.size());
+                Eigen::Vector3d p_mean_local = p_mean_world - rg_first_ref_world_;
+
+                RangeSample a;
+                a.p_local = p_mean_local;
+                a.r       = r_mean;
+                a.stamp   = ros::Time::now();
+
+                rg_anchors_win_.push_back(a);
+                while ((int)rg_anchors_win_.size() > WIN_ANCHOR_N)
+                    rg_anchors_win_.pop_front();
+
+                ROS_INFO("[RG] add anchor: win=%zu (need %d) stage=%d p_local=(%.3f,%.3f,%.3f) r_mean=%.3f",
+                         rg_anchors_win_.size(), WIN_ANCHOR_N, rg_stage_,
+                         a.p_local.x(), a.p_local.y(), a.p_local.z(), a.r);
+
+                r_buf.clear();
+                p_buf_world.clear();
+                mean_cnt = 0;
+                settle_cnt = 0;
+
+                rg_stage_ = (rg_stage_ + 1) % 4;
+                formed_anchor = true;
+            }
+        }
+
     } else {
-        // 引导目标：母机上方偏移（世界系）
-        const Eigen::Vector3d guide_world = mother_world + dock_r2m;
-        const Eigen::Vector3d guide_local = guide_world - first_ref_world;
-
-        ROS_INFO("[RG] mother_world=(%.3f,%.3f,%.3f), guide_world=(%.3f,%.3f,%.3f), max_res=%.3f",
-                 mother_world.x(), mother_world.y(), mother_world.z(),
-                 guide_world.x(),  guide_world.y(),  guide_world.z(),
-                 max_res);
-
-        // 更新基准点：朝 guide_local 走
-        Eigen::Vector3d dir = guide_local - base_pos_local; 
-        const double dist_to_guide = dir.norm();
-
-        if (dist_to_guide > 1e-3) {
-            dir /= dist_to_guide;
-
-            // 你原来的步长参数：step_gamma/step_min/step_max 假设是成员或常量
-            double step = remote_guide_param_.step_gamma * dist_to_guide;
-            step = std::max(remote_guide_param_.step_min, std::min(step, remote_guide_param_.step_max));
-            base_pos_local += step * dir;
-        }
-
-        const double target_dist = dock_r2m.norm();   // 例如 1.0 m
-        const double dist_err = std::abs(uwb_distance - target_dist);
-
-        ROS_INFO("[RG] Exit guidance: dist_err=%.3f<th=%.3f, max_res=%.3f<th=%.3f",
-            dist_err, remote_guide_param_.exit_dist_thr, max_res, remote_guide_param_.exit_res_thr);
-        round_idx++;
-        ROS_INFO("[RG] round %d done. base_pos_local=(%.3f,%.3f,%.3f)",
-                 round_idx, base_pos_local.x(), base_pos_local.y(), base_pos_local.z());
-        ROS_INFO("now_pos:=(%.3f,%.3f,%.3f)", uav_odom_pos_.x(), uav_odom_pos_.y(), uav_odom_pos_.z());
-
-        if (dist_err < remote_guide_param_.exit_dist_thr &&
-            max_res  < remote_guide_param_.exit_res_thr)
-        {
-            onboard_published_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
-            PubOnboardMsg();
-            ROS_INFO("REMOTE GUIDANCE COMPLETE");
-            return;
-        }
+        settle_cnt = 0;
+        mean_cnt = 0;
+        r_buf.clear();
+        p_buf_world.clear();
     }
 
-    // ---- 重置进入下一轮 ----
-    point_idx = 0;
-    for (int j = 0; j < 4; ++j) {
-        pre_uwb_d[j] = 0.0;
-        pre_vio_p[j].setZero();
+    if (formed_anchor && (int)rg_anchors_win_.size() == WIN_ANCHOR_N) {
+        solve_and_step_from_anchors();
+    }
+
+    double dock_err = std::numeric_limits<double>::infinity();
+    Eigen::Vector3d dock_world = Eigen::Vector3d::Zero();
+
+    if (rg_have_mother_world_) {
+        dock_world = rg_last_mother_world_ + dock_r2m;
+        dock_err = (uav_odom_pos_ - dock_world).norm();
+    }
+
+    const bool pass_pos = (rg_have_mother_world_ && std::isfinite(dock_err) &&
+                           dock_err < remote_guide_param_.exit_dist_thr);
+
+    const bool pass_res = (rg_have_solution_ && std::isfinite(rg_last_rms_res_) &&
+                           rg_last_rms_res_ < remote_guide_param_.exit_res_thr);
+
+    ROS_INFO_THROTTLE(0.5,
+        "[RG] exit check: dock_err=%.3f (%s %.3f) | rms=%.3f (%s %.3f) | last_max=%.3f | have_solution=%d | have_mother=%d",
+        dock_err, (pass_pos ? "<" : ">="), remote_guide_param_.exit_dist_thr,
+        rg_last_rms_res_, (pass_res ? "<" : ">="), remote_guide_param_.exit_res_thr,
+        rg_last_max_res_, (int)rg_have_solution_, (int)rg_have_mother_world_
+    );
+
+    ROS_INFO_THROTTLE(0.5,
+        "[RG] uav_world=(%.3f,%.3f,%.3f) dock_world=(%.3f,%.3f,%.3f)",
+        uav_odom_pos_.x(), uav_odom_pos_.y(), uav_odom_pos_.z(),
+        dock_world.x(), dock_world.y(), dock_world.z()
+    );
+
+    if (pass_pos && pass_res) {
+        onboard_published_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
+        est_dock_world = dock_world;
+        PubOnboardMsg();
+        ROS_INFO("[RG] REMOTE GUIDANCE COMPLETE");
+        return;
     }
 }
 
 
-
-bool OnboardUavFsm::geometric_estimate(Eigen::Vector3d& est_local,
-                                       Eigen::Vector3d& est_world,
-                                       double& max_residual)
+bool OnboardUavFsm::estimate_mother_from_window(
+    const std::deque<RangeSample>& win,
+    Eigen::Vector3d& mother_local,
+    double& max_residual,
+    double& rms_residual)
 {
-    Eigen::Matrix3d A;
-    Eigen::Vector3d b;
+    const int N = (int)win.size();
+    if (N < 4) return false;
 
-    A << 2.0*(pre_vio_p[1].x() - pre_vio_p[0].x()), 2.0*(pre_vio_p[1].y() - pre_vio_p[0].y()), 2.0*(pre_vio_p[1].z() - pre_vio_p[0].z()),
-         2.0*(pre_vio_p[2].x() - pre_vio_p[0].x()), 2.0*(pre_vio_p[2].y() - pre_vio_p[0].y()), 2.0*(pre_vio_p[2].z() - pre_vio_p[0].z()),
-         2.0*(pre_vio_p[3].x() - pre_vio_p[0].x()), 2.0*(pre_vio_p[3].y() - pre_vio_p[0].y()), 2.0*(pre_vio_p[3].z() - pre_vio_p[0].z());
+    thread_local bool has_prev = false;
+    thread_local Eigen::Vector3d P_prev = Eigen::Vector3d::Zero();
 
-    b << pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[1]*pre_uwb_d[1] + pre_vio_p[1].squaredNorm() - pre_vio_p[0].squaredNorm(),
-         pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[2]*pre_uwb_d[2] + pre_vio_p[2].squaredNorm() - pre_vio_p[0].squaredNorm(),
-         pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[3]*pre_uwb_d[3] + pre_vio_p[3].squaredNorm() - pre_vio_p[0].squaredNorm();
+    Eigen::Vector3d P = Eigen::Vector3d::Zero();
 
-    Eigen::ColPivHouseholderQR<Eigen::Matrix3d> qr(A);
-    if (qr.rank() < 3) {
-        ROS_WARN("[geo] A rank-deficient (rank=%ld). Bad 4-point geometry.", (long)qr.rank());
-        return false;
+    if (has_prev) {
+        P = P_prev;
+    } else {
+        // 线性初值：2(p0 - pi)^T X = r_i^2 - r_0^2 + ||p_i||^2 - ||p_0||^2
+        const Eigen::Vector3d p0 = win[0].p_local;
+        const double r0 = win[0].r;
+
+        Eigen::MatrixXd A(N - 1, 3);
+        Eigen::VectorXd b(N - 1);
+
+        const double p0_sq = p0.squaredNorm();
+        for (int i = 1; i < N; ++i) {
+            const Eigen::Vector3d pi = win[i].p_local;
+            const double ri = win[i].r;
+
+            A.row(i - 1) = (2.0 * (p0 - pi)).transpose();
+            b(i - 1) = (ri * ri - r0 * r0) + (pi.squaredNorm() - p0_sq);
+        }
+
+        Eigen::Vector3d X0 = A.colPivHouseholderQr().solve(b);
+        if (!X0.allFinite()) return false;
+
+        P = X0;
+        has_prev = true;
+        P_prev = P;
     }
 
-    // 母机在“局部系(first_ref_world为原点)”下的位置
-    est_local = qr.solve(b); 
+    // ---------- Huber 权重 ----------
+    auto huber_weight = [](double abs_r, double delta) {
+        if (abs_r <= delta) return 1.0;
+        return delta / abs_r;
+    };
 
-    // 残差检查
+    // 这个值建议设置为“正常 UWB 噪声的 2~3 倍”
+    const double huber_delta = 0.5;
+
+    auto robust_cost = [&](const Eigen::Vector3d& X) {
+        double s = 0.0;
+        for (int i = 0; i < N; ++i) {
+            const double ri = (X - win[i].p_local).norm() - win[i].r;
+            const double wi = huber_weight(std::abs(ri), huber_delta);
+            s += wi * ri * ri; // 加权平方残差
+        }
+        return s;
+    };
+
+    // ---------- LM ----------
+    double lambda = 1e-3;
+    double c0 = robust_cost(P);
+
+    for (int iter = 0; iter < 15; ++iter) {
+        Eigen::Matrix3d H = Eigen::Matrix3d::Zero();
+        Eigen::Vector3d g = Eigen::Vector3d::Zero();
+
+        for (int i = 0; i < N; ++i) {
+            Eigen::Vector3d d = P - win[i].p_local;
+            double dist = d.norm();
+            if (dist < 1e-8) dist = 1e-8;
+
+            const double ri = dist - win[i].r;           // residual
+            const double wi = huber_weight(std::abs(ri), huber_delta);
+
+            const Eigen::Vector3d Ji = d / dist;         // 3x1
+
+            H.noalias() += wi * (Ji * Ji.transpose());
+            g.noalias() += wi * (Ji * ri);
+        }
+
+        // 病态保护：对角线太小就加大阻尼
+        const double min_diag = H.diagonal().minCoeff();
+        if (!std::isfinite(min_diag)) return false;
+        if (min_diag < 1e-10) lambda = std::min(1e2, lambda * 10.0);
+
+        // (H + lambda I) dx = -g
+        Eigen::Matrix3d H_lm = H + lambda * Eigen::Matrix3d::Identity();
+        Eigen::LDLT<Eigen::Matrix3d> ldlt(H_lm);
+        if (ldlt.info() != Eigen::Success) {
+            lambda = std::min(1e2, lambda * 10.0);
+            continue;
+        }
+
+        Eigen::Vector3d dx = ldlt.solve(-g);
+        if (!dx.allFinite()) return false;
+
+        // 大步保护：避免一次跳太远
+        if (dx.norm() > 10.0) {
+            lambda = std::min(1e2, lambda * 10.0);
+            continue;
+        }
+
+        const Eigen::Vector3d P_new = P + dx;
+        const double c1 = robust_cost(P_new);
+
+        if (std::isfinite(c1) && c1 < c0) {
+            P = P_new;
+            c0 = c1;
+            lambda = std::max(1e-6, lambda * 0.5);
+
+            if (dx.norm() < 1e-4) break;
+        } else {
+            lambda = std::min(1e2, lambda * 5.0);
+        }
+    }
+
+    mother_local = P;
+    P_prev = P;
+    has_prev = true;
+
     max_residual = 0.0;
-    for (int i = 0; i < 4; ++i) {
-        double pred = (est_local - pre_vio_p[i]).norm();
-        double res  = std::abs(pred - pre_uwb_d[i]);
-        if (res > max_residual) max_residual = res;
+    double sum2 = 0.0;
+    for (int i = 0; i < N; ++i) {
+        const double pred = (P - win[i].p_local).norm();
+        const double res  = std::abs(pred - win[i].r);
+        max_residual = std::max(max_residual, res);
+        sum2 += res * res;
     }
+    rms_residual = std::sqrt(sum2 / N);
 
-    // 转世界系：world = first_ref_world + local
-    est_world = first_ref_world + est_local;
-
-    // 兼容你原变量
-    geo_est_c2d = est_world;
-    return true;
+    return std::isfinite(max_residual) && std::isfinite(rms_residual);
 }
+
 
 bool OnboardUavFsm::Circle_Search() {
     static bool detect = false, cir_done = false;
@@ -1033,7 +1209,7 @@ void OnboardUavFsm::RunDockingReturn()
     {
         target_pos_.x() = circle_search_target.x();
         target_pos_.y() = circle_search_target.y();
-        target_pos_.z() = geo_est_c2d.z() + dock_r2m.z(); //2026110todo
+        target_pos_.z() = est_dock_world.z(); //2026110todo
         target_vel_ = Eigen::Vector3d::Zero();
         target_q_ = Eigen::Quaterniond::Identity();
     }
@@ -1057,7 +1233,7 @@ void OnboardUavFsm::RunDockingReturn()
             is_replan_ = true;
             target_pos_.x() = circle_search_target.x();
             target_pos_.y() = circle_search_target.y();
-            target_pos_.z() = geo_est_c2d.z() + dock_r2m.z(); //2026110todo
+            target_pos_.z() = est_dock_world.z(); //2026110todo
             target_vel_ = Eigen::Vector3d::Zero();
             target_q_ = Eigen::Quaterniond::Identity();
             ROS_INFO("Receive Down Cmd, But cannot find tag");
@@ -1584,30 +1760,18 @@ void OnboardUavFsm::Pub_Guidance_State()
 {
     guidance_state_.header.stamp = ros::Time::now();
     guidance_state_.uav_id = "Sub-UAV";
-    // guidance_state_.Guidance_mode = rg_flag;
-    // switch (rg_flag)
-    // {
-    //     case 1:
-    //         guidance_state_.Guidance_mode_s = "GO_4points";
-    //         break;
-    //     case 2:
-    //         guidance_state_.Guidance_mode_s = "GEO_EST";
-    //         break;
-    //     case 3:
-    //         guidance_state_.Guidance_mode_s = "ITE_EST";
-    //         break;
-    //     default:
-    //         break;
-    // }
+    guidance_state_.Guidance_mode = rg_stage_;
 
-    guidance_state_.geo_est_x = geo_est_c2d.x() + dock_r2m.x();
-    guidance_state_.geo_est_y = geo_est_c2d.y() + dock_r2m.y();
-    guidance_state_.geo_est_z = geo_est_c2d.z() + dock_r2m.z();
+    guidance_state_.geo_est_x = rg_last_mother_world_.x();
+    guidance_state_.geo_est_y = rg_last_mother_world_.y();
+    guidance_state_.geo_est_z = rg_last_mother_world_.z();
+
+    guidance_state_.max_residual = rg_last_max_res_;
+    guidance_state_.rms_residual = rg_last_rms_res_;
 
     guidance_state_.uwb_dis = uwb_distance;
 
     remote_ctrl_pub_.publish(guidance_state_);
-
 }
 
 void OnboardUavFsm::Pub_FSM_State()

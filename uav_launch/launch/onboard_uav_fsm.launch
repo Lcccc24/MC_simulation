@@ -38,11 +38,13 @@
         <param name="remote_guide/mean_cnt" type="int" value="20" />
         <param name="remote_guide/reach_target_thr" type="double" value="0.2" />
         <param name="remote_guide/settle_cnt" type="int" value="20" />
-        <param name="remote_guide/exit_dist_thr" type="double" value="1.0" />
-        <param name="remote_guide/exit_res_thr" type="double" value="1.0" />
-        <param name="remote_guide/step_gamma" type="double" value="0.4" />
-        <param name="remote_guide/step_min" type="double" value="0.2" />
-        <param name="remote_guide/step_max" type="double" value="1.0" />
+        <param name="remote_guide/exit_dist_thr" type="double" value="0.4" />
+        <param name="remote_guide/exit_res_thr" type="double" value="0.25" />
+        <param name="remote_guide/step_gamma" type="double" value="0.3" />
+        <param name="remote_guide/step_min" type="double" value="0.1" />
+        <param name="remote_guide/step_max" type="double" value="0.8" />
+        <param name="remote_guide/res_gate_max" type="double" value="0.5" />
+        <param name="remote_guide/res_gate_rms" type="double" value="0.25" />
         <!-- 边长 0.6m 的方形 + z 高低交错（±0.25） -->
         <param name="remote_guide/p_set_1_x" type="double" value=" 0.3" />
         <param name="remote_guide/p_set_1_y" type="double" value=" 0.3" />
