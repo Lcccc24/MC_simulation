@@ -31,9 +31,15 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("remote_guide/dock_r2m_x", remote_guide_param_.dock_r2m_x, 0.0);
     nh.param("remote_guide/dock_r2m_y", remote_guide_param_.dock_r2m_y, 0.0);
     nh.param("remote_guide/dock_r2m_z", remote_guide_param_.dock_r2m_z, 2.0);
-    nh.param("remote_guide/d_stopite", remote_guide_param_.d_stopite, 0.2);
-    nh.param("remote_guide/d_change", remote_guide_param_.d_change, 3.0);
     nh.param("remote_guide/search_flag", remote_guide_param_.search_flag, true);
+    nh.param("remote_guide/mean_cnt", remote_guide_param_.mean_cnt, 30);
+    nh.param("remote_guide/reach_target_thr", remote_guide_param_.reach_target_thr, 0.2);
+    nh.param("remote_guide/settle_cnt", remote_guide_param_.settle_cnt, 20);
+    nh.param("remote_guide/exit_dist_thr", remote_guide_param_.exit_dist_thr, 0.5);
+    nh.param("remote_guide/exit_res_thr", remote_guide_param_.exit_res_thr, 0.05);
+    nh.param("remote_guide/step_gamma", remote_guide_param_.step_gamma, 0.05);
+    nh.param("remote_guide/step_min", remote_guide_param_.step_min, 0.5);
+    nh.param("remote_guide/step_max", remote_guide_param_.step_max, 2.0);
     nh.param("remote_guide/p_set_1_x", remote_guide_param_.p_set_1_x, 1.0);
     nh.param("remote_guide/p_set_1_y", remote_guide_param_.p_set_1_y, 1.0);
     nh.param("remote_guide/p_set_1_z", remote_guide_param_.p_set_1_z, 1.0);
@@ -46,18 +52,8 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("remote_guide/p_set_4_x", remote_guide_param_.p_set_4_x, 1.0);
     nh.param("remote_guide/p_set_4_y", remote_guide_param_.p_set_4_y, -1.0);
     nh.param("remote_guide/p_set_4_z", remote_guide_param_.p_set_4_z, 0.9);
-    nh.param("remote_guide/ite_a", remote_guide_param_.ite_a, 96);
-    nh.param("remote_guide/ite_theta", remote_guide_param_.ite_theta, M_PI / 3);
-    nh.param("remote_guide/ite_b1_val", remote_guide_param_.ite_b1_val, 0.5);
-    nh.param("remote_guide/ite_b2_val", remote_guide_param_.ite_b2_val, 0.86602540);
-    nh.param("remote_guide/ite_gamma_val", remote_guide_param_.ite_gamma_val, 15);
-    nh.param("remote_guide/ite_alpha_val", remote_guide_param_.ite_alpha_val, 5);
-    nh.param("remote_guide/ite_beta_val", remote_guide_param_.ite_beta_val, 12);
-    nh.param("remote_guide/ite_vel_max", remote_guide_param_.ite_vel_max, 2.0);
-    nh.param("remote_guide/iterate_time", remote_guide_param_.iterate_time, 0.15);
     nh.param("remote_guide/go4_point_wait_count", remote_guide_param_.go4_point_wait_count, 60);
-    nh.param("remote_guide/go4_point_invalid_dis", remote_guide_param_.go4_point_invalid_dis, 3.0);
-    nh.param("remote_guide/ite_min_count", remote_guide_param_.ite_min_count, 250);
+
     nh.param("remote_guide/fly_away_test", remote_guide_param_.fly_away_test, false);
     nh.param("trajectory/normal_minco_piece", normal_minco_piece_, 10);
     nh.param("trajectory/landing_minco_piece", landing_minco_piece_, 5);
@@ -651,49 +647,45 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
 void OnboardUavFsm::RunMissionMode()
 {
     static int count;
-    if(rg_flag == 0)
+
+    // 执行任务
+    ROS_INFO("RUN MISSION POINT");
+    if (is_first_run_)
     {
-        // 执行任务
-        ROS_INFO("RUN MISSION POINT");
-        if (is_first_run_)
-        {
-            // 设置航点
-            target_pos_.x() = onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0];
-            target_pos_.y() = onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1];
-            target_pos_.z() = onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2];
-            target_vel_ = Eigen::Vector3d::Zero();
-            target_q_ = Eigen::Quaterniond::Identity();
-            hover_flag_ = false;
-            ROS_INFO("target_pos_ : %f,%f,%f",target_pos_.x(),target_pos_.y(),target_pos_.z());
-            // DEBUG 打印目标位姿
+        // 设置航点
+        target_pos_.x() = onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0];
+        target_pos_.y() = onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1];
+        target_pos_.z() = onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2];
+        target_vel_ = Eigen::Vector3d::Zero();
+        target_q_ = Eigen::Quaterniond::Identity();
+        hover_flag_ = false;
+        ROS_INFO("target_pos_ : %f,%f,%f",target_pos_.x(),target_pos_.y(),target_pos_.z());
+        // DEBUG 打印目标位姿
+    }
+
+    // 到达指定点后，发送 Onboard::MISSION_COMPLETE，等待下一步指令
+    if ((uav_odom_pos_ - target_pos_).norm() < 0.3)
+    {
+        count ++;
+        if(count > 0 && count < 20){
+            std_msgs::Int32 mother_move_msg;
+            mother_move_msg.data = 1;
+            mother_move_pub_.publish(mother_move_msg);
         }
 
-        // 到达指定点后，发送 Onboard::MISSION_COMPLETE，等待下一步指令
-        if ((uav_odom_pos_ - target_pos_).norm() < 0.3)
-        {
-            count ++;
-            if(count > 0 && count < 20){
-                std_msgs::Int32 mother_move_msg;
-                mother_move_msg.data = 1;
-                mother_move_pub_.publish(mother_move_msg);
-            }
-
-            if(count > remote_guide_param_.go4_point_wait_count){
-                count = 0;
-                //onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
-                onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
-                PubOnboardMsg();
-                rg_flag = 1;
-                return;
-            }
+        if(count > remote_guide_param_.go4_point_wait_count){
+            count = 0;
+            //onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
+            onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
+            PubOnboardMsg();
+            return;
         }
+    }
 
-        // 调用规划器，规划任务轨迹
-        if (!hover_flag_ && PlanTrajectory())
-        {
-            is_replan_ = false;
-        }
-
+    // 调用规划器，规划任务轨迹
+    if (!hover_flag_ && PlanTrajectory())
+    {
+        is_replan_ = false;
     }
 
     else
@@ -706,240 +698,196 @@ void OnboardUavFsm::RunMissionMode()
  */
 void OnboardUavFsm::Remote_Guidance()
 {   
-
     //PUB FLAG
     Pub_Guidance_State();
 
-    static int i = 0;
-    static int hover_times = 0;
-    static int k = 0;
-    int mean_time = 30;
-    ROS_INFO("RG_FLAG:%d",rg_flag);
-    if(rg_flag == 1)
-    {
-        // 确保索引 i 在 p_set 的范围内
-        if (i >= static_cast<int>(p_set.size())) 
-        {
-            ROS_WARN("Index i (%d) is out of bounds for p_set size (%ld)", i, p_set.size());
-            return;
-        }
+    static int point_idx = 0;
+    static int hover_cnt = 0;
+    static int sample_cnt = 0;
+    static int round_idx = 0;
 
-        // 设置航点
-        target_pos_.x() = onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0] + p_set[i].x();
-        target_pos_.y() = onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1] + p_set[i].y();
-        target_pos_.z() = onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2] + p_set[i].z();
-        target_vel_ = Eigen::Vector3d::Zero();
-        target_q_ = Eigen::Quaterniond::Identity();
-        hover_flag_ = false;
-        //ROS_INFO("target_pos_%d : %f,%f,%f",i+1,target_pos_.x(),target_pos_.y(),target_pos_.z());
+    static bool first_ref_inited = false;
+    static bool base_inited = false;
+    static Eigen::Vector3d base_pos_local = Eigen::Vector3d::Zero();
 
-        if ((uav_odom_pos_ - target_pos_).norm() < 0.2)
-        {
-            ROS_INFO("PREVIEW POINT %d",i+1);
-            hover_times ++;
-            if(hover_times > 20)
-            {
-                if(k < mean_time)
-                {
-                    k++;
-                    pre_uwb_d[i] += uwb_distance;
-                    pre_vio_p[i].x() += uav_odom_pos_.x() - (onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0]);
-                    pre_vio_p[i].y() += uav_odom_pos_.y() - (onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1]);
-                    pre_vio_p[i].z() += uav_odom_pos_.z() - (onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2]);
-                    //ROS_INFO("PRE_UWB_i%d : %f",i+1,pre_uwb_d[i]/k);
-                    //ROS_INFO("PRE_VIO_i%d : %f,%f,%f",i+1,pre_vio_p[i].x()/k,pre_vio_p[i].y()/k,pre_vio_p[i].z()/k);
-                    // ros::spinOnce();
-                    // ros::Duration(0.05).sleep(); // 添加延迟模拟合理采样间隔
-                }
-
-                else{
-                    pre_uwb_d[i] = pre_uwb_d[i] / mean_time;
-                    pre_vio_p[i] = pre_vio_p[i] / mean_time;
-                    ROS_INFO("PRE_UWB_%d : %f",i+1,pre_uwb_d[i]);
-                    ROS_INFO("PRE_VIO_%d : %f,%f,%f",i+1,pre_vio_p[i].x(),pre_vio_p[i].y(),pre_vio_p[i].z());
-                    i++;
-                    k = 0;
-                    hover_times = 0;
-                }
-            }
-
-            if (remote_guide_param_.fly_away_test) {
-                if (i == 1) {
-                    std_msgs::Int32 mother_move_msg;
-                    mother_move_msg.data = 2;
-                    mother_move_pub_.publish(mother_move_msg);
-                }
-
-                if (i == 2) {
-                    std_msgs::Int32 mother_move_msg;
-                    mother_move_msg.data = 3;
-                    mother_move_pub_.publish(mother_move_msg);
-                }
-            }
-
-            if(i == 4)
-                rg_flag = 2;
-        }
-
-        if (PlanTrajectory()){
-            is_replan_ = false;
-            // 打印目标位姿
-            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        }
-
+    // 确保索引 i 在 p_set 的范围内
+    if (p_set.size() != 4) {
+        ROS_ERROR("[RG] p_set size (%ld) < 4", p_set.size());
+        return;
     }
 
+    if (!first_ref_inited) {
+        first_ref_world = Eigen::Vector3d(
+            onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0],
+            onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1],
+            onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2]
+        );
+        first_ref_inited = true;
 
-    if(rg_flag == 2)
-    {
-        static bool enter = false;
-
-        if (!enter) {
-            geometric_estimate();
-            target_pos_ = geo_est_c2d + dock_r2m;
-            target_vel_ = Eigen::Vector3d::Zero();
-            target_q_ = Eigen::Quaterniond::Identity();
-
-            if (((geo_est_c2d - uav_odom_pos_).norm() > uwb_distance + remote_guide_param_.go4_point_invalid_dis) || geo_est_c2d.z() < 0.0) {
-                rg_flag = 3;
-                remote_guide_param_.d_stopite = 0.15;
-            }
-            ROS_INFO("geo_est_error:%f", ((geo_est_c2d - uav_odom_pos_).norm() - uwb_distance));
-            enter = true;
-        }
-
-        if((uav_odom_pos_ - target_pos_).norm() > remote_guide_param_.d_change)
-        {
-            ROS_INFO("geometric method guidance");
-            ROS_INFO("uav_odom_pos_ : %f,%f,%f",uav_odom_pos_.x(),uav_odom_pos_.y(),uav_odom_pos_.z());
-        }
-
-        else
-            rg_flag = 3;
-
-        if (PlanTrajectory()) {
-            is_replan_ = false;
-            // 打印目标位姿
-            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        }
-        
+        ROS_INFO("[RG] first_ref_world=(%.3f,%.3f,%.3f)",
+                 first_ref_world.x(), first_ref_world.y(), first_ref_world.z());
     }
 
-    if(rg_flag == 3)
-    {
-        iterate_estimate();
-        target_pos_ = ite_est_p;
-        target_vel_ = Eigen::Vector3d::Zero();
-        target_q_ = Eigen::Quaterniond::Identity();
-        //ROS_INFO("iterate method guidance");
-        //ROS_INFO("target_pos_ : %f,%f,%f",target_pos_.x(),target_pos_.y(),target_pos_.z());
-    
-        if((ite_c2d_q - dock_r2m).norm() < remote_guide_param_.d_stopite && ite_k > remote_guide_param_.ite_min_count)
+    if (!base_inited) {
+        base_pos_local.setZero();
+        base_inited = true;
+        point_idx = 0;
+        hover_cnt = 0;
+        sample_cnt = 0;
+        round_idx = 0;
+
+        for (int j = 0; j < 4; ++j) {
+            pre_uwb_d[j] = 0.0;
+            pre_vio_p[j].setZero();
+        }
+        ROS_INFO("[RG] init base_pos_local=(0,0,0)");
+    }
+
+    if (point_idx < 0) point_idx = 0;
+    if (point_idx > 3) point_idx = 0;
+
+    const Eigen::Vector3d local_target = base_pos_local + p_set[point_idx];
+    target_pos_ = first_ref_world + local_target;
+    target_vel_ = Eigen::Vector3d::Zero();
+    target_q_   = Eigen::Quaterniond::Identity();
+    hover_flag_ = false;
+
+    if (PlanTrajectory()) {
+        is_replan_ = false;
+    }
+
+    if ((uav_odom_pos_ - target_pos_).norm() >= remote_guide_param_.reach_target_thr) {
+        return;
+    }
+
+    ROS_INFO("PREVIEW POINT:%d, ROUND:%d", point_idx + 1, round_idx + 1);
+    hover_cnt++;
+
+    if (hover_cnt <= remote_guide_param_.settle_cnt) {
+        return;
+    }
+
+    if (sample_cnt < remote_guide_param_.mean_cnt) {
+        sample_cnt++;
+        pre_uwb_d[point_idx] += uwb_distance;
+
+        const Eigen::Vector3d local_meas = uav_odom_pos_ - first_ref_world;
+        pre_vio_p[point_idx] += local_meas;
+        return;
+    }
+
+    pre_uwb_d[point_idx] /= static_cast<double>(remote_guide_param_.mean_cnt);
+    pre_vio_p[point_idx] /= static_cast<double>(remote_guide_param_.mean_cnt);
+
+    ROS_INFO("[RG] P%d done: UWB=%.3f, VIO_local=(%.3f,%.3f,%.3f)",
+             point_idx + 1, pre_uwb_d[point_idx],
+             pre_vio_p[point_idx].x(), pre_vio_p[point_idx].y(), pre_vio_p[point_idx].z());
+
+    point_idx++;
+    hover_cnt = 0;
+    sample_cnt = 0;
+
+    if (point_idx < 4) {
+        return;
+    }
+
+    Eigen::Vector3d mother_local, mother_world;
+    double max_res = 0.0;
+
+    const bool ok = geometric_estimate(mother_local, mother_world, max_res);
+    if (!ok) {
+        ROS_WARN("[RG] geometric_estimate failed. Restart round without base update.");
+    } else {
+        // 引导目标：母机上方偏移（世界系）
+        const Eigen::Vector3d guide_world = mother_world + dock_r2m;
+        const Eigen::Vector3d guide_local = guide_world - first_ref_world;
+
+        ROS_INFO("[RG] mother_world=(%.3f,%.3f,%.3f), guide_world=(%.3f,%.3f,%.3f), max_res=%.3f",
+                 mother_world.x(), mother_world.y(), mother_world.z(),
+                 guide_world.x(),  guide_world.y(),  guide_world.z(),
+                 max_res);
+
+        // 更新基准点：朝 guide_local 走
+        Eigen::Vector3d dir = guide_local - base_pos_local; 
+        const double dist_to_guide = dir.norm();
+
+        if (dist_to_guide > 1e-3) {
+            dir /= dist_to_guide;
+
+            // 你原来的步长参数：step_gamma/step_min/step_max 假设是成员或常量
+            double step = remote_guide_param_.step_gamma * dist_to_guide;
+            step = std::max(remote_guide_param_.step_min, std::min(step, remote_guide_param_.step_max));
+            base_pos_local += step * dir;
+        }
+
+        const double target_dist = dock_r2m.norm();   // 例如 1.0 m
+        const double dist_err = std::abs(uwb_distance - target_dist);
+
+        ROS_INFO("[RG] Exit guidance: dist_err=%.3f<th=%.3f, max_res=%.3f<th=%.3f",
+            dist_err, remote_guide_param_.exit_dist_thr, max_res, remote_guide_param_.exit_res_thr);
+        round_idx++;
+        ROS_INFO("[RG] round %d done. base_pos_local=(%.3f,%.3f,%.3f)",
+                 round_idx, base_pos_local.x(), base_pos_local.y(), base_pos_local.z());
+        ROS_INFO("now_pos:=(%.3f,%.3f,%.3f)", uav_odom_pos_.x(), uav_odom_pos_.y(), uav_odom_pos_.z());
+
+        if (dist_err < remote_guide_param_.exit_dist_thr &&
+            max_res  < remote_guide_param_.exit_res_thr)
         {
-            //onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
             onboard_published_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
             PubOnboardMsg();
-            ROS_INFO("REMOTE GUIDANCE COMPLETE"); 
+            ROS_INFO("REMOTE GUIDANCE COMPLETE");
             return;
         }
-        
-        if (PlanTrajectory()) {
-            is_replan_ = false;
-            // 打印目标位姿
-            // ROS_INFO("target x:%.2f,y:%.2f,z:%.2f", target_pos_.x(), target_pos_.y(), target_pos_.z());
-        }
     }
 
-    else
-        return;
+    // ---- 重置进入下一轮 ----
+    point_idx = 0;
+    for (int j = 0; j < 4; ++j) {
+        pre_uwb_d[j] = 0.0;
+        pre_vio_p[j].setZero();
+    }
 }
 
-void OnboardUavFsm::geometric_estimate()
+
+
+bool OnboardUavFsm::geometric_estimate(Eigen::Vector3d& est_local,
+                                       Eigen::Vector3d& est_world,
+                                       double& max_residual)
 {
-    Eigen::Matrix3d A; 
+    Eigen::Matrix3d A;
     Eigen::Vector3d b;
 
-    static Eigen::Vector3d act_c2d = {onboard_received_.position.x,onboard_received_.position.y,onboard_received_.position.z};
-    static Eigen::Vector3d offset = {onboard_uav_param_.origin_pos_offset[0],onboard_uav_param_.origin_pos_offset[1],onboard_uav_param_.origin_pos_offset[2]};
-
-    A << 2*(pre_vio_p[1].x() - pre_vio_p[0].x()), 2*(pre_vio_p[1].y() - pre_vio_p[0].y()), 2*(pre_vio_p[1].z() - pre_vio_p[0].z()),
-    2*(pre_vio_p[2].x() - pre_vio_p[0].x()), 2*(pre_vio_p[2].y() - pre_vio_p[0].y()), 2*(pre_vio_p[2].z() - pre_vio_p[0].z()),
-    2*(pre_vio_p[3].x() - pre_vio_p[0].x()), 2*(pre_vio_p[3].y() - pre_vio_p[0].y()), 2*(pre_vio_p[3].z() - pre_vio_p[0].z());
+    A << 2.0*(pre_vio_p[1].x() - pre_vio_p[0].x()), 2.0*(pre_vio_p[1].y() - pre_vio_p[0].y()), 2.0*(pre_vio_p[1].z() - pre_vio_p[0].z()),
+         2.0*(pre_vio_p[2].x() - pre_vio_p[0].x()), 2.0*(pre_vio_p[2].y() - pre_vio_p[0].y()), 2.0*(pre_vio_p[2].z() - pre_vio_p[0].z()),
+         2.0*(pre_vio_p[3].x() - pre_vio_p[0].x()), 2.0*(pre_vio_p[3].y() - pre_vio_p[0].y()), 2.0*(pre_vio_p[3].z() - pre_vio_p[0].z());
 
     b << pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[1]*pre_uwb_d[1] + pre_vio_p[1].squaredNorm() - pre_vio_p[0].squaredNorm(),
-    pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[2]*pre_uwb_d[2] + pre_vio_p[2].squaredNorm() - pre_vio_p[0].squaredNorm(),
-    pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[3]*pre_uwb_d[3] + pre_vio_p[3].squaredNorm() - pre_vio_p[0].squaredNorm();
+         pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[2]*pre_uwb_d[2] + pre_vio_p[2].squaredNorm() - pre_vio_p[0].squaredNorm(),
+         pre_uwb_d[0]*pre_uwb_d[0] - pre_uwb_d[3]*pre_uwb_d[3] + pre_vio_p[3].squaredNorm() - pre_vio_p[0].squaredNorm();
 
-    //求解矩阵得到几何法的子机相对于对接点的位置
-    //局部坐标系，以收到的任务目标点为原点，解算出的为母机在局部坐标系下的位置
-    geo_est_c2d = A.inverse() * b;
-    //ROS_INFO("geo_est_c2d: [%f, %f, %f]", geo_est_c2d.x(), geo_est_c2d.y(), geo_est_c2d.z());
-
-    //子机惯性坐标系即全局坐标系下的位置
-    geo_est_c2d = (geo_est_c2d + act_c2d);
-    ROS_INFO("geo_est_c2d: [%f, %f, %f]", geo_est_c2d.x(), geo_est_c2d.y(), geo_est_c2d.z());
-
-    //仿真中初始位置子母机不一致，存在位置偏移量
-    geo_est_c2d = geo_est_c2d - offset;
-    ROS_INFO("geo_est_c2d: [%f, %f, %f]", geo_est_c2d.x(), geo_est_c2d.y(), geo_est_c2d.z());
-}
-
-void OnboardUavFsm::iterate_estimate()
-{
-    static Eigen::Vector3d vio_pk, vio_pk0, Delta_pk, ite_vel, sigma;
-    static Eigen::Vector2d rho;
-    static float uwb_intermediate, error_k;
-    static double uwb_dk,uwb_dk0;
-    static Eigen::Matrix2d D;
-    D << cos(2*M_PI/remote_guide_param_.ite_a), -sin(2*M_PI/remote_guide_param_.ite_a),
-    sin(2*M_PI/remote_guide_param_.ite_a), cos(2*M_PI/remote_guide_param_.ite_a);
-
-    if(ite_k == 0)
-    {   
-        vio_pk0 = uav_odom_pos_;
-        uwb_dk0 = uwb_distance;
-        rho << cos(remote_guide_param_.ite_theta), sin(remote_guide_param_.ite_theta);
-        sigma << remote_guide_param_.ite_b1_val*rho.x(), remote_guide_param_.ite_b1_val*rho.y(), remote_guide_param_.ite_b2_val*(4*pow(rho.x(),3) - 3*rho.x());
-        ite_c2d_q = {0,0,0};
-        //ite_c2d_q = uav_odom_pos_ - geo_est_c2d;                       
-        ite_vel = remote_guide_param_.ite_beta_val*(dock_r2m - ite_c2d_q) ; //beta_value*(remote_guide_param_.dock_r2m - ite_c2d_q) + alpha_val*sigma
-        if(ite_vel.norm() > remote_guide_param_.ite_vel_max)
-            ite_vel = ite_vel / ite_vel.norm() * remote_guide_param_.ite_vel_max;
-        ite_est_p = ite_vel * remote_guide_param_.iterate_time;
-        ite_est_p = vio_pk0 + ite_est_p;
-        ite_k++;
-
+    Eigen::ColPivHouseholderQR<Eigen::Matrix3d> qr(A);
+    if (qr.rank() < 3) {
+        ROS_WARN("[geo] A rank-deficient (rank=%ld). Bad 4-point geometry.", (long)qr.rank());
+        return false;
     }
 
-    else
-    {
-        vio_pk = uav_odom_pos_;
-        uwb_dk = uwb_distance; 
-        Delta_pk = vio_pk - vio_pk0;
-        rho = D*rho;
-        //sigma << b1_val*(4*pow(rho.x(),3) - 3*rho.x()), b1_val*(3*rho.y() - 4*pow(rho.y(),3)), b2_val*rho.x(); 
-        sigma << remote_guide_param_.ite_b1_val*rho.x(), remote_guide_param_.ite_b1_val*rho.y(), remote_guide_param_.ite_b2_val*(4*pow(rho.x(),3) - 3*rho.x());
-        uwb_intermediate = (pow(uwb_dk,2) - pow(uwb_dk0,2) - pow(Delta_pk.norm(),2)) / 2;
-        error_k = uwb_intermediate - Delta_pk.transpose()*ite_c2d_q;
-        ite_c2d_q = (ite_c2d_q + Delta_pk + remote_guide_param_.ite_gamma_val*Delta_pk*error_k);
-        ite_c2d_q = ite_c2d_q * uwb_dk / std::max(ite_c2d_q.norm(),uwb_dk);
-        ite_vel = remote_guide_param_.ite_beta_val*(dock_r2m - ite_c2d_q) + remote_guide_param_.ite_alpha_val*sigma;
-        if(ite_vel.norm() > remote_guide_param_.ite_vel_max)
-            ite_vel = ite_vel / ite_vel.norm() * remote_guide_param_.ite_vel_max;
-        ite_est_p = ite_vel * remote_guide_param_.iterate_time;
-        ROS_INFO("ite_pos: [%f, %f, %f]", ite_est_p.x(), ite_est_p.y(), ite_est_p.z());
-        ite_est_p = vio_pk + ite_est_p;
+    // 母机在“局部系(first_ref_world为原点)”下的位置
+    est_local = qr.solve(b); 
 
-        //update parameter
-        vio_pk0 = vio_pk;
-        uwb_dk0 = uwb_dk;
-        ite_k++;
+    // 残差检查
+    max_residual = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        double pred = (est_local - pre_vio_p[i]).norm();
+        double res  = std::abs(pred - pre_uwb_d[i]);
+        if (res > max_residual) max_residual = res;
     }
 
-    ROS_INFO("k:bias: %d,%f,%f,%f,%f",ite_k,ite_c2d_q.x(),ite_c2d_q.y(),ite_c2d_q.z(),error_k);
-    ROS_INFO("ite_vel: [%f, %f, %f]", ite_vel.x(), ite_vel.y(), ite_vel.z());
-    ROS_INFO("now_pos: [%f, %f, %f]", vio_pk.x(), vio_pk.y(), vio_pk.z());
-    ROS_INFO("target_pos: [%f, %f, %f]", ite_est_p.x(), ite_est_p.y(), ite_est_p.z());
+    // 转世界系：world = first_ref_world + local
+    est_world = first_ref_world + est_local;
+
+    // 兼容你原变量
+    geo_est_c2d = est_world;
+    return true;
 }
 
 bool OnboardUavFsm::Circle_Search() {
@@ -1085,7 +1033,7 @@ void OnboardUavFsm::RunDockingReturn()
     {
         target_pos_.x() = circle_search_target.x();
         target_pos_.y() = circle_search_target.y();
-        target_pos_.z() = ite_est_p.z();
+        target_pos_.z() = geo_est_c2d.z() + dock_r2m.z(); //2026110todo
         target_vel_ = Eigen::Vector3d::Zero();
         target_q_ = Eigen::Quaterniond::Identity();
     }
@@ -1109,7 +1057,7 @@ void OnboardUavFsm::RunDockingReturn()
             is_replan_ = true;
             target_pos_.x() = circle_search_target.x();
             target_pos_.y() = circle_search_target.y();
-            target_pos_.z() = ite_est_p.z();
+            target_pos_.z() = geo_est_c2d.z() + dock_r2m.z(); //2026110todo
             target_vel_ = Eigen::Vector3d::Zero();
             target_q_ = Eigen::Quaterniond::Identity();
             ROS_INFO("Receive Down Cmd, But cannot find tag");
@@ -1636,33 +1584,25 @@ void OnboardUavFsm::Pub_Guidance_State()
 {
     guidance_state_.header.stamp = ros::Time::now();
     guidance_state_.uav_id = "Sub-UAV";
-    guidance_state_.Guidance_mode = rg_flag;
-    switch (rg_flag)
-    {
-        case 1:
-            guidance_state_.Guidance_mode_s = "GO_4points";
-            break;
-        case 2:
-            guidance_state_.Guidance_mode_s = "GEO_EST";
-            break;
-        case 3:
-            guidance_state_.Guidance_mode_s = "ITE_EST";
-            break;
-        default:
-            break;
-    }
+    // guidance_state_.Guidance_mode = rg_flag;
+    // switch (rg_flag)
+    // {
+    //     case 1:
+    //         guidance_state_.Guidance_mode_s = "GO_4points";
+    //         break;
+    //     case 2:
+    //         guidance_state_.Guidance_mode_s = "GEO_EST";
+    //         break;
+    //     case 3:
+    //         guidance_state_.Guidance_mode_s = "ITE_EST";
+    //         break;
+    //     default:
+    //         break;
+    // }
 
     guidance_state_.geo_est_x = geo_est_c2d.x() + dock_r2m.x();
     guidance_state_.geo_est_y = geo_est_c2d.y() + dock_r2m.y();
     guidance_state_.geo_est_z = geo_est_c2d.z() + dock_r2m.z();
-
-    guidance_state_.ite_est_x = ite_est_p.x();
-    guidance_state_.ite_est_y = ite_est_p.y();
-    guidance_state_.ite_est_z = ite_est_p.z();
-
-    guidance_state_.ite_err_x = ite_c2d_q.x() - dock_r2m.x();
-    guidance_state_.ite_err_y = ite_c2d_q.y() - dock_r2m.y();
-    guidance_state_.ite_err_z = ite_c2d_q.z() - dock_r2m.z();
 
     guidance_state_.uwb_dis = uwb_distance;
 

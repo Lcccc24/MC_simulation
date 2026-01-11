@@ -162,8 +162,14 @@ private:
         double dock_r2m_x;
         double dock_r2m_y;
         double dock_r2m_z;
-        double d_stopite;
-        double d_change;
+        int mean_cnt;
+        double reach_target_thr;
+        int settle_cnt;
+        double exit_dist_thr;
+        double exit_res_thr;
+        double step_gamma;
+        double step_min;
+        double step_max;
         bool search_flag;
         double p_set_1_x;
         double p_set_1_y;
@@ -176,19 +182,8 @@ private:
         double p_set_3_z;
         double p_set_4_x;
         double p_set_4_y;
-        double p_set_4_z;
-        int ite_a;
-        double ite_theta;
-        double ite_b1_val;
-        double ite_b2_val;
-        int ite_gamma_val;
-        int ite_alpha_val;
-        int ite_beta_val;
-        double ite_vel_max;
-        double iterate_time;
-        int ite_min_count;
+        double p_set_4_z;   
         int go4_point_wait_count;
-        double go4_point_invalid_dis;
         bool fly_away_test;
     };
 
@@ -230,8 +225,7 @@ private:
     bool Circle_Search();
     void Run_Search();
     void Remote_Guidance();
-    void geometric_estimate();
-    void iterate_estimate();
+    bool geometric_estimate(Eigen::Vector3d& est_local, Eigen::Vector3d& est_world, double& max_residual);
     void PubOnboardMsg();
     void PubOnboardUavState();
     void UavDisarm();
@@ -283,11 +277,8 @@ private:
     
     Eigen::Vector3d dock_r2m = Eigen::Vector3d::Zero();
     Eigen::Vector3d geo_est_c2d = Eigen::Vector3d::Zero();
-    Eigen::Vector3d ite_c2d_q = Eigen::Vector3d::Zero();
-    Eigen::Vector3d ite_est_p = Eigen::Vector3d::Zero();
-    int ite_k = 0;
+    Eigen::Vector3d first_ref_world = Eigen::Vector3d::Zero();
     double pre_uwb_d[4] = {0,0,0,0};
-    int rg_flag = 0;
     Eigen::Vector2d circle_search_target = Eigen::Vector2d(0.0, 0.0);   
     bool search_flag = false;
 
