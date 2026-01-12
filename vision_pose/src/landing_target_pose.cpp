@@ -12,6 +12,7 @@ LandingTargetPose::LandingTargetPose(ros::NodeHandle &nh) : nh_(nh) //, tf_liste
     landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_raw", 1);
     landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose/ESKF", 1);
     landing_relative_odom_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_relative_odom", 1);
+    rg_est_mother_sub_ = nh_.subscribe<quadrotor_msgs::GuidanceState>("/remote_ctrl/state", 1, &LandingTargetPose::RgEstMotherCallback, this);
 
     eskf_timer_ = nh_.createTimer(ros::Duration(1.0 / eskf_param_.eskf_hz), &LandingTargetPose::EskfTimerCallback, this);
 
@@ -180,6 +181,18 @@ void LandingTargetPose::M_LocalPosCallback(const geometry_msgs::PoseStamped::Con
     m_uav_local_pos_ = *msg;
 }
 
+void LandingTargetPose::RgEstMotherCallback(const quadrotor_msgs::GuidanceState::ConstPtr &msg)
+{
+    rg_msg_ = *msg;
+    if (msg->have_solution == true) {
+        rg_est_mother_pos_ = Eigen::Vector3d(msg->geo_est_x, msg->geo_est_y, msg->geo_est_z);
+        mother_pos_offset_.x() = m_uav_local_pos_.pose.position.x - rg_est_mother_pos_.x();
+        mother_pos_offset_.y() = m_uav_local_pos_.pose.position.y - rg_est_mother_pos_.y();
+        mother_pos_offset_.z() = m_uav_local_pos_.pose.position.z - rg_est_mother_pos_.z();
+        have_mother_pos_offset_ = true;
+    }
+}
+
 void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg)
 {
     const double now = ros::Time::now().toSec();
@@ -225,7 +238,6 @@ void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetecti
         }
     }
 
-
     if (msg->detections.size() == 0)
     {
         return;
@@ -244,16 +256,19 @@ void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetecti
         }
 
         if (!is_correct_bundle) {
+            ROS_INFO("incorrect bundle id");
             continue;
         }
 
         if (std::fabs(detection.pose.pose.pose.position.z) > tag_param_.tag_valid_distance){
+            ROS_INFO("tag pose z is too far");
             continue;
         }
 
-        if (!IsTagPoseValid()) {
-            continue;
-        }
+        // if (!IsTagPoseValid()) {
+        //     ROS_INFO("tag pose is not valid");
+        //     continue;
+        // }
 
         tag_pose_.header = detection.pose.header;
         tag_pose_.pose = detection.pose.pose.pose;
@@ -295,7 +310,7 @@ bool LandingTargetPose::IsTagPoseValid()
     double q_z_d = std::fabs(last_tag_pose_.pose.orientation.z - tag_pose_.pose.orientation.z);
     double q_w_d = std::fabs(last_tag_pose_.pose.orientation.w - tag_pose_.pose.orientation.w);
 
-    if ((x_d > 0.1 || y_d > 0.1 || z_d > 0.1 || q_x_d > 0.1 || q_y_d > 0.1 || q_z_d > 0.1 || q_w_d > 0.1) && eskf_outlier_reject_count < 10)
+    if ((x_d > 0.5 || y_d > 0.5 || z_d > 0.5 || q_x_d > 0.5 || q_y_d > 0.1 || q_z_d > 0.1 || q_w_d > 0.1) && eskf_outlier_reject_count < 10)
     {
         eskf_outlier_reject_count++;
         return false;
@@ -312,7 +327,7 @@ void LandingTargetPose::UpdateRelativePosition() {
     if (uav_local_pos_.header.stamp.toSec() > 0 && m_uav_local_pos_.header.stamp.toSec() > 0) {
         double time_diff = std::abs(uav_local_pos_.header.stamp.toSec() - m_uav_local_pos_.header.stamp.toSec());
 
-        if (time_diff < 0.05) {  // 50ms以内的同步误差可以接受
+        if (time_diff < 0.05 && have_mother_pos_offset_) {  // 50ms以内的同步误差可以接受
             // 计算两架飞机在全局坐标系下的位置差
             Eigen::Vector3d uav_pos(
                 uav_local_pos_.pose.position.x,
@@ -321,9 +336,9 @@ void LandingTargetPose::UpdateRelativePosition() {
             );
             
             Eigen::Vector3d m_uav_pos(
-                m_uav_local_pos_.pose.position.x - 1.0,
-                m_uav_local_pos_.pose.position.y,
-                m_uav_local_pos_.pose.position.z
+                m_uav_local_pos_.pose.position.x - mother_pos_offset_.x(),
+                m_uav_local_pos_.pose.position.y - mother_pos_offset_.y(),
+                m_uav_local_pos_.pose.position.z - mother_pos_offset_.z()
             );
 
             Eigen::Vector3d rel_pos_global = uav_pos - m_uav_pos;
@@ -343,38 +358,36 @@ void LandingTargetPose::UpdateRelativePosition() {
             ROS_INFO("Relative position: %f, %f, %f", rel_pos_body.x(), rel_pos_body.y(), rel_pos_body.z());
 
             double distance = rel_pos_body.norm();
-            if (distance < 4.0) {
-                relative_pos_ = rel_pos_body;
-                last_relative_position_time_ = ros::Time::now().toSec();
-                relative_position_valid_ = true;
-                get_new_relative_position_ = true;
-                // landing_target_relative_odom_.pose.position.x = rel_pos_body.x();
-                // landing_target_relative_odom_.pose.position.y = rel_pos_body.y();
-                // landing_target_relative_odom_.pose.position.z = rel_pos_body.z();
-                // landing_target_relative_odom_.header.stamp = ros::Time::now();
-                // landing_relative_odom_pub_.publish(landing_target_relative_odom_);
+            relative_pos_ = rel_pos_body;
+            last_relative_position_time_ = ros::Time::now().toSec();
+            relative_position_valid_ = true;
+            get_new_relative_position_ = true;
+            // landing_target_relative_odom_.pose.position.x = rel_pos_body.x();
+            // landing_target_relative_odom_.pose.position.y = rel_pos_body.y();
+            // landing_target_relative_odom_.pose.position.z = rel_pos_body.z();
+            // landing_target_relative_odom_.header.stamp = ros::Time::now();
+            // landing_relative_odom_pub_.publish(landing_target_relative_odom_);
 
-                static Eigen::Vector3d p_ml = frame_param_.uav0_to_landing_p;
-                static Sophus::SO3d R_ml = Sophus::SO3d(frame_param_.uav0_to_landing_q);
+            static Eigen::Vector3d p_ml = frame_param_.uav0_to_landing_p;
+            static Sophus::SO3d R_ml = Sophus::SO3d(frame_param_.uav0_to_landing_q);
 
-                Eigen::Vector3d p_ms = rel_pos_body;
-                Sophus::SO3d R_ms = Sophus::SO3d(m_uav_q);
+            Eigen::Vector3d p_ms = rel_pos_body;
+            Sophus::SO3d R_ms = Sophus::SO3d(m_uav_q);
 
-                Eigen::Vector3d p_es = uav_pos;
-                Eigen::Quaterniond q_es = Eigen::Quaterniond(uav_local_pos_.pose.orientation.w, uav_local_pos_.pose.orientation.x, uav_local_pos_.pose.orientation.y, uav_local_pos_.pose.orientation.z);
-                q_es.normalize();
-                Sophus::SO3d R_es = Sophus::SO3d(q_es);
+            Eigen::Vector3d p_es = uav_pos;
+            Eigen::Quaterniond q_es = Eigen::Quaterniond(uav_local_pos_.pose.orientation.w, uav_local_pos_.pose.orientation.x, uav_local_pos_.pose.orientation.y, uav_local_pos_.pose.orientation.z);
+            q_es.normalize();
+            Sophus::SO3d R_es = Sophus::SO3d(q_es);
 
-                Eigen::Vector3d p_el = p_es + (R_es * R_ms.inverse()).matrix() * (p_ml - p_ms);
-                Sophus::SO3d R_el = R_es * R_ms.inverse() * R_ml;
+            Eigen::Vector3d p_el = p_es + (R_es * R_ms.inverse()).matrix() * (p_ml - p_ms);
+            Sophus::SO3d R_el = R_es * R_ms.inverse() * R_ml;
 
-                landing_target_relative_odom_.header.stamp = ros::Time::now();
-                landing_target_relative_odom_.header.frame_id = "map";
-                landing_target_relative_odom_.pose.position.x = p_el.x();
-                landing_target_relative_odom_.pose.position.y = p_el.y();
-                landing_target_relative_odom_.pose.position.z = p_el.z();
-                landing_relative_odom_pub_.publish(landing_target_relative_odom_);
-            }
+            landing_target_relative_odom_.header.stamp = ros::Time::now();
+            landing_target_relative_odom_.header.frame_id = "map";
+            landing_target_relative_odom_.pose.position.x = p_el.x();
+            landing_target_relative_odom_.pose.position.y = p_el.y();
+            landing_target_relative_odom_.pose.position.z = p_el.z();
+            landing_relative_odom_pub_.publish(landing_target_relative_odom_);
         }
     }
 }

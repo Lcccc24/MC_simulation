@@ -3,6 +3,7 @@
 #include <geometry_msgs/Transform.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Vector3.h>
+#include "quadrotor_msgs/GuidanceState.h"
 #include <tf2_ros/transform_listener.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -73,7 +74,7 @@ private:
     frame_param frame_param_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_, m_uav_local_pos_sub_, tag_detection_sub_, uwb_sub_;
+    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_, m_uav_local_pos_sub_, tag_detection_sub_, uwb_sub_, rg_est_mother_sub_;
     ros::Publisher landing_target_pose_raw_pub_, landing_target_pose_pub_, landing_relative_odom_pub_;
 
     void ImuCallback(const sensor_msgs::Imu::ConstPtr &msg);
@@ -81,6 +82,7 @@ private:
     void M_LocalPosCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg);
     void UwbDistanceCallback(const std_msgs::Float64::ConstPtr &msg);
+    void RgEstMotherCallback(const quadrotor_msgs::GuidanceState::ConstPtr &msg);
 
     bool IsTagPoseValid();
     void UpdateRelativePosition();
@@ -95,6 +97,10 @@ private:
     geometry_msgs::PoseStamped tag_pose_, last_tag_pose_;
     geometry_msgs::PoseStamped uav_local_pos_, m_uav_local_pos_;
     Eigen::Vector3d relative_pos_;
+    quadrotor_msgs::GuidanceState rg_msg_;
+    Eigen::Vector3d rg_est_mother_pos_;
+    Eigen::Vector3d mother_pos_offset_;
+    bool have_mother_pos_offset_ = false;
 
     geometry_msgs::PoseStamped landing_target_pose_raw_, landing_target_pose_, landing_target_relative_odom_;
 
