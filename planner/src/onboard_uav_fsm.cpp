@@ -1767,6 +1767,7 @@ void OnboardUavFsm::Pub_Guidance_State()
     guidance_state_.header.stamp = ros::Time::now();
     guidance_state_.uav_id = "Sub-UAV";
     guidance_state_.Guidance_mode = rg_stage_;
+    guidance_state_.have_solution = rg_have_solution_;
 
     guidance_state_.geo_est_x = rg_last_mother_world_.x();
     guidance_state_.geo_est_y = rg_last_mother_world_.y();
