@@ -31,6 +31,7 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("remote_guide/dock_r2m_x", remote_guide_param_.dock_r2m_x, 0.0);
     nh.param("remote_guide/dock_r2m_y", remote_guide_param_.dock_r2m_y, 0.0);
     nh.param("remote_guide/dock_r2m_z", remote_guide_param_.dock_r2m_z, 2.0);
+    nh.param("remote_guide/win_anchor_n", remote_guide_param_.win_anchor_n, 4);
     nh.param("remote_guide/search_flag", remote_guide_param_.search_flag, true);
     nh.param("remote_guide/mean_cnt", remote_guide_param_.mean_cnt, 30);
     nh.param("remote_guide/reach_target_thr", remote_guide_param_.reach_target_thr, 0.2);
@@ -685,8 +686,6 @@ void OnboardUavFsm::Remote_Guidance()
 {
     Pub_Guidance_State();
 
-    const int WIN_ANCHOR_N = 4;
-
     static int settle_cnt = 0;
     static int mean_cnt   = 0;
 
@@ -734,9 +733,16 @@ void OnboardUavFsm::Remote_Guidance()
             case 2: return Eigen::Vector3d(remote_guide_param_.p_set_3_x,
                                            remote_guide_param_.p_set_3_y,
                                            remote_guide_param_.p_set_3_z);
-            default:return Eigen::Vector3d(remote_guide_param_.p_set_4_x,
+            case 3: return Eigen::Vector3d(remote_guide_param_.p_set_4_x,
                                            remote_guide_param_.p_set_4_y,
                                            remote_guide_param_.p_set_4_z);
+            case 4: return Eigen::Vector3d(remote_guide_param_.p_set_5_x,
+                                           remote_guide_param_.p_set_5_y,
+                                           remote_guide_param_.p_set_5_z);
+            case 5: return Eigen::Vector3d(remote_guide_param_.p_set_6_x,
+                                           remote_guide_param_.p_set_6_y,
+                                           remote_guide_param_.p_set_6_z);
+            default: return Eigen::Vector3d(0, 0, 0);
         }
     };
 
@@ -746,7 +752,7 @@ void OnboardUavFsm::Remote_Guidance()
 
     auto solve_and_step_from_anchors = [&]() -> bool
     {
-        if ((int)rg_anchors_win_.size() < WIN_ANCHOR_N) return false;
+        if ((int)rg_anchors_win_.size() < remote_guide_param_.win_anchor_n) return false;
 
         Eigen::Vector3d mother_local, mother_world;
         double max_res = 0.0, rms_res = 0.0;
@@ -865,11 +871,11 @@ void OnboardUavFsm::Remote_Guidance()
                 a.stamp   = ros::Time::now();
 
                 rg_anchors_win_.push_back(a);
-                while ((int)rg_anchors_win_.size() > WIN_ANCHOR_N)
+                while ((int)rg_anchors_win_.size() > remote_guide_param_.win_anchor_n)
                     rg_anchors_win_.pop_front();
 
                 ROS_INFO("[RG] add anchor: win=%zu (need %d) stage=%d p_local=(%.3f,%.3f,%.3f) r_mean=%.3f",
-                         rg_anchors_win_.size(), WIN_ANCHOR_N, rg_stage_,
+                         rg_anchors_win_.size(), remote_guide_param_.win_anchor_n, rg_stage_,
                          a.p_local.x(), a.p_local.y(), a.p_local.z(), a.r);
 
                 r_buf.clear();
@@ -877,7 +883,7 @@ void OnboardUavFsm::Remote_Guidance()
                 mean_cnt = 0;
                 settle_cnt = 0;
 
-                rg_stage_ = (rg_stage_ + 1) % 4;
+                rg_stage_ = (rg_stage_ + 1) % remote_guide_param_.win_anchor_n;
                 formed_anchor = true;
             }
         }
@@ -889,7 +895,7 @@ void OnboardUavFsm::Remote_Guidance()
         p_buf_world.clear();
     }
 
-    if (formed_anchor && (int)rg_anchors_win_.size() == WIN_ANCHOR_N) {
+    if (formed_anchor && (int)rg_anchors_win_.size() == remote_guide_param_.win_anchor_n) {
         solve_and_step_from_anchors();
     }
 
@@ -937,7 +943,7 @@ bool OnboardUavFsm::estimate_mother_from_window(
     double& rms_residual)
 {
     const int N = (int)win.size();
-    if (N < 4) return false;
+    if (N < remote_guide_param_.win_anchor_n) return false;
 
     thread_local bool has_prev = false;
     thread_local Eigen::Vector3d P_prev = Eigen::Vector3d::Zero();

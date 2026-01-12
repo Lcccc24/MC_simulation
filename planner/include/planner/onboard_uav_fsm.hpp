@@ -162,6 +162,7 @@ private:
         double dock_r2m_x;
         double dock_r2m_y;
         double dock_r2m_z;
+        int win_anchor_n;
         double res_gate_max;
         double res_gate_rms;
         int mean_cnt;
@@ -184,7 +185,13 @@ private:
         double p_set_3_z;
         double p_set_4_x;
         double p_set_4_y;
-        double p_set_4_z;   
+        double p_set_4_z;
+        double p_set_5_x;
+        double p_set_5_y;
+        double p_set_5_z;
+        double p_set_6_x;
+        double p_set_6_y;
+        double p_set_6_z;   
         int go4_point_wait_count;
         bool fly_away_test;
     };
