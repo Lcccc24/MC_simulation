@@ -72,7 +72,7 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     uav_odom_sub_ = nh.subscribe("/Sub_UAV/mavros/local_position/odom", 1, &OnboardUavFsm::UavOdomCallback, this);
     std::string onboard_msg_sub_name = "/uav" + std::to_string(onboard_uav_param_.uav_id) + "/onboard_msg";
     onboard_msg_sub_ = nh.subscribe(onboard_msg_sub_name, 1, &OnboardUavFsm::OnboardMsgCallback, this);
-    // std::string landing_target_pose_topic_name = std::to_string(onboard_uav_param_.uav_id) + "/landing_target_pose";cccccccccc
+    // std::string landing_target_pose_topic_name = std::to_string(onboard_uav_param_.uav_id) + "/landing_target_pose";
     landing_target_pose_sub_ = nh.subscribe("/landing_target_pose/ESKF", 1, &OnboardUavFsm::LandingTargetPoseCallback, this);
     heartbeat_pub_ = nh.advertise<std_msgs::Empty>("/heartbeat", 1); 
     takeoff_land_cmd_pub_ = nh.advertise<quadrotor_msgs::TakeoffLand>("/px4ctrl/takeoff_land", 1);
@@ -89,6 +89,7 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     //远程引导标志位pub与进入降落标志位pub 
     remote_ctrl_pub_ = nh.advertise<quadrotor_msgs::GuidanceState>("/remote_ctrl/state", 1);
     fsm_state_pub_ = nh.advertise<quadrotor_msgs::FsmState>("/fsm_state", 1);
+    coord_align_pub_ = nh.advertise<geometry_msgs::Vector3>("/coord_align", 1);
 
     // 创建路径规划器实例
     traj_opt_ptr_ = std::make_shared<traj_opt::TrajOpt>(nh);
@@ -1075,41 +1076,43 @@ bool OnboardUavFsm::estimate_mother_from_window(
 bool OnboardUavFsm::Circle_Search() {
     static bool detect = false, cir_done = false;
     static Eigen::Vector3d cir_center = uav_odom_pos_;
-    static float cir_radius = 0.2;
-    const double omega = 2 * M_PI / 5;  // 角速度（弧度/秒） 5秒完成一圈
-    const double T = 2.0 * M_PI / omega;  // 完成一圈的时间
-    static auto start_time = ros::Time::now().toSec();  // 初始时间
-    float t = ros::Time::now().toSec() - start_time;  // 当前时间
+    static double cir_radius = 0.2;   
+    static double start_time = ros::Time::now().toSec();
 
-    // 更新目标位置（根据圆形轨迹）
-    target_pos_ << cir_center[0] + cir_radius * cos(t * omega), 
-                   cir_center[1] + cir_radius * sin(t * omega), 
+    const double v = 0.3; 
+
+    double t = ros::Time::now().toSec() - start_time;  
+    double omega = v / cir_radius;                     
+    double T = 2.0 * M_PI / omega;                   
+    double theta = t * omega;
+
+    target_pos_ << cir_center[0] + cir_radius * cos(theta), 
+                   cir_center[1] + cir_radius * sin(theta), 
                    cir_center[2];
 
     if (PlanTrajectory())
     {
         is_replan_ = false;
     }
-    
-    // 如果接收到着陆目标位置
+
     if (LandingTargetPoseIsReceived(ros::Time::now())) {
         circle_search_target.x() = landing_target_pose_.pose.position.x;
         circle_search_target.y() = landing_target_pose_.pose.position.y;
+        first_frame_corrected_pos_.x = landing_target_pose_.pose.position.x;
+        first_frame_corrected_pos_.y = landing_target_pose_.pose.position.y;
+        first_frame_corrected_pos_.z = landing_target_pose_.pose.position.z;
         detect = true;
     }
 
-    // 判断是否完成一圈圆形轨迹
     if (t >= T) {
         cir_done = true;
-        cir_radius += 0.2;  // 可以根据需要调整半径增加的步长
-        start_time = ros::Time::now().toSec();  // 重置开始时间
+        cir_radius += 0.2;                    
+        start_time = ros::Time::now().toSec(); 
     }
 
-    //ROS_INFO("detect, cir_done: %d, %d", detect, cir_done);
-
-    // 返回是否完成了圆形轨迹并且成功检测到着陆目标
     return (detect && cir_done);
 }
+
 
 void OnboardUavFsm::Run_Search() {
 
@@ -1124,6 +1127,9 @@ void OnboardUavFsm::Run_Search() {
     }
 
     else{
+        for(int i = 0; i < 10; ++i) {
+            coord_align_pub_.publish(first_frame_corrected_pos_);
+        }
         onboard_published_.flight_status = quadrotor_msgs::Onboard::SEARCH_COMPLETE;
         PubOnboardMsg();
         ROS_INFO("SEARCH COMPLETE");
