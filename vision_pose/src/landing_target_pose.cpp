@@ -9,10 +9,10 @@ LandingTargetPose::LandingTargetPose(ros::NodeHandle &nh) : nh_(nh) //, tf_liste
     m_uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/AVC/mavros/local_position/pose", 1, &LandingTargetPose::M_LocalPosCallback, this);
     tag_detection_sub_ = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(tag_param_.topic_name, 1, &LandingTargetPose::TagDetectionCallback, this);
     uwb_sub_ = nh_.subscribe<std_msgs::Float64>("/fake_uwb_distance", 10, &LandingTargetPose::UwbDistanceCallback, this);
+        coord_align_sub_ = nh_.subscribe<geometry_msgs::Vector3>("/coord_align", 1, &LandingTargetPose::CoordAlignCallback, this);
     landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_raw", 1);
     landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose/ESKF", 1);
     landing_relative_odom_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_relative_odom", 1);
-    rg_est_mother_sub_ = nh_.subscribe<quadrotor_msgs::GuidanceState>("/remote_ctrl/state", 1, &LandingTargetPose::RgEstMotherCallback, this);
 
     eskf_timer_ = nh_.createTimer(ros::Duration(1.0 / eskf_param_.eskf_hz), &LandingTargetPose::EskfTimerCallback, this);
 
@@ -181,18 +181,6 @@ void LandingTargetPose::M_LocalPosCallback(const geometry_msgs::PoseStamped::Con
     m_uav_local_pos_ = *msg;
 }
 
-void LandingTargetPose::RgEstMotherCallback(const quadrotor_msgs::GuidanceState::ConstPtr &msg)
-{
-    rg_msg_ = *msg;
-    if (msg->have_solution == true) {
-        rg_est_mother_pos_ = Eigen::Vector3d(msg->geo_est_x, msg->geo_est_y, msg->geo_est_z);
-        mother_pos_offset_.x() = m_uav_local_pos_.pose.position.x - rg_est_mother_pos_.x();
-        mother_pos_offset_.y() = m_uav_local_pos_.pose.position.y - rg_est_mother_pos_.y();
-        mother_pos_offset_.z() = m_uav_local_pos_.pose.position.z - rg_est_mother_pos_.z();
-        have_mother_pos_offset_ = true;
-    }
-}
-
 void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg)
 {
     const double now = ros::Time::now().toSec();
@@ -296,6 +284,16 @@ void LandingTargetPose::UwbDistanceCallback(const std_msgs::Float64::ConstPtr &m
     get_new_uwb_ = true;
 }
 
+void LandingTargetPose::CoordAlignCallback(const geometry_msgs::Vector3::ConstPtr &msg) {
+    coord_align_pos_.x() = msg->x;
+    coord_align_pos_.y() = msg->y;
+    coord_align_pos_.z() = msg->z;
+    relative_odom_offset_.x() = coord_align_pos_.x() - m_uav_local_pos_.pose.position.x;
+    relative_odom_offset_.y() = coord_align_pos_.y() - m_uav_local_pos_.pose.position.y;
+    relative_odom_offset_.z() = coord_align_pos_.z() - frame_param_.uav0_to_landing_p.z() - m_uav_local_pos_.pose.position.z; 
+    have_coord_align_ = true;
+}
+
 bool LandingTargetPose::IsTagPoseValid()
 {
     static int eskf_outlier_reject_count = 0;
@@ -327,7 +325,7 @@ void LandingTargetPose::UpdateRelativePosition() {
     if (uav_local_pos_.header.stamp.toSec() > 0 && m_uav_local_pos_.header.stamp.toSec() > 0) {
         double time_diff = std::abs(uav_local_pos_.header.stamp.toSec() - m_uav_local_pos_.header.stamp.toSec());
 
-        if (time_diff < 0.05 && have_mother_pos_offset_) {  // 50ms以内的同步误差可以接受
+        if (time_diff < 0.05 && have_coord_align_) {  // 50ms以内的同步误差可以接受
             // 计算两架飞机在全局坐标系下的位置差
             Eigen::Vector3d uav_pos(
                 uav_local_pos_.pose.position.x,
@@ -336,9 +334,9 @@ void LandingTargetPose::UpdateRelativePosition() {
             );
             
             Eigen::Vector3d m_uav_pos(
-                m_uav_local_pos_.pose.position.x - mother_pos_offset_.x(),
-                m_uav_local_pos_.pose.position.y - mother_pos_offset_.y(),
-                m_uav_local_pos_.pose.position.z - mother_pos_offset_.z()
+                m_uav_local_pos_.pose.position.x + relative_odom_offset_.x(),
+                m_uav_local_pos_.pose.position.y + relative_odom_offset_.y(),
+                m_uav_local_pos_.pose.position.z + relative_odom_offset_.z()
             );
 
             Eigen::Vector3d rel_pos_global = uav_pos - m_uav_pos;

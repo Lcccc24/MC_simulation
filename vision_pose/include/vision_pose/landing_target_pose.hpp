@@ -74,7 +74,7 @@ private:
     frame_param frame_param_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_, m_uav_local_pos_sub_, tag_detection_sub_, uwb_sub_, rg_est_mother_sub_;
+    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_, m_uav_local_pos_sub_, tag_detection_sub_, uwb_sub_, coord_align_sub_;
     ros::Publisher landing_target_pose_raw_pub_, landing_target_pose_pub_, landing_relative_odom_pub_;
 
     void ImuCallback(const sensor_msgs::Imu::ConstPtr &msg);
@@ -82,7 +82,7 @@ private:
     void M_LocalPosCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg);
     void UwbDistanceCallback(const std_msgs::Float64::ConstPtr &msg);
-    void RgEstMotherCallback(const quadrotor_msgs::GuidanceState::ConstPtr &msg);
+    void CoordAlignCallback(const geometry_msgs::Vector3::ConstPtr &msg);
 
     bool IsTagPoseValid();
     void UpdateRelativePosition();
@@ -96,11 +96,10 @@ private:
     sensor_msgs::Imu imu_;
     geometry_msgs::PoseStamped tag_pose_, last_tag_pose_;
     geometry_msgs::PoseStamped uav_local_pos_, m_uav_local_pos_;
-    Eigen::Vector3d relative_pos_;
-    quadrotor_msgs::GuidanceState rg_msg_;
-    Eigen::Vector3d rg_est_mother_pos_;
-    Eigen::Vector3d mother_pos_offset_;
-    bool have_mother_pos_offset_ = false;
+    Eigen::Vector3d relative_pos_;  
+    Eigen::Vector3d coord_align_pos_;
+    Eigen::Vector3d relative_odom_offset_;
+    bool have_coord_align_ = false;
 
     geometry_msgs::PoseStamped landing_target_pose_raw_, landing_target_pose_, landing_target_relative_odom_;
 
