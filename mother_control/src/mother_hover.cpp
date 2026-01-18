@@ -112,8 +112,8 @@ int main(int argc, char **argv)
         }
 
         if (move_cmd.data == 1) {
-            goal.position.x = 0.0;
-            goal.position.y = 0.0;
+            goal.position.x = 1.0;
+            goal.position.y = 2.0;
             goal.position.z = 3.0;
         }
 
@@ -130,8 +130,8 @@ int main(int argc, char **argv)
         }
 
         else {
-            goal.position.x = 2.0;
-            goal.position.y = 2.0;
+            goal.position.x = -1.0;
+            goal.position.y = -1.0;
             goal.position.z = 2.0;
         }
 

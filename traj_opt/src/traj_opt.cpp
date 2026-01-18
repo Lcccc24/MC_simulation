@@ -565,7 +565,7 @@ namespace traj_opt
   }
 
   bool TrajOpt::StrongWindAreaGradCostP(const Eigen::Vector3d &p, Eigen::Vector3d &gradp, double &costp) {
-    constexpr double mu = 0.01;
+    constexpr double mu = 0.05;
     double ppenx = std::fabs(p.x() - land_target_x_) - safe_aera_radius_;
     double ppeny = std::fabs(p.y() - land_target_y_) - safe_aera_radius_;
 
@@ -592,7 +592,7 @@ namespace traj_opt
   }
 
   bool TrajOpt::feasibilityGradCostV(const Eigen::Vector3d &v, Eigen::Vector3d &gradv, double &costv) {
-    constexpr double mu = 0.01;
+    constexpr double mu = 0.1;
     double vpen = v.squaredNorm() - vmax_ * vmax_;
 
     if (vpen  < 0) {
@@ -611,7 +611,7 @@ namespace traj_opt
   }
 
   bool TrajOpt::feasibilityGradCostA(const Eigen::Vector3d &a, Eigen::Vector3d &grada, double &costa) {
-    constexpr double mu = 0.01;
+    constexpr double mu = 0.05;
     double apen = a.squaredNorm() - amax_ * amax_;
 
     if (apen  < 0) {
@@ -630,7 +630,7 @@ namespace traj_opt
   }
 
   bool TrajOpt::feasibilityGradCostJ(const Eigen::Vector3d &j, Eigen::Vector3d &gradj, double &costj) {
-    constexpr double mu = 0.01;
+    constexpr double mu = 0.05;
     double jpen = j.squaredNorm() - jmax_ * jmax_;
 
     if (jpen  < 0) {
@@ -657,7 +657,7 @@ namespace traj_opt
   // || \omega_12 ||^2 = \omega_1^2 + \omega_2^2 = \dot{a}^2 + \dot{b}^2 + \dot{c}^2
   //hopf 纤维化
   bool TrajOpt::feasibilityGradCostOmega(const Eigen::Vector3d &a, const Eigen::Vector3d &j, Eigen::Vector3d &grada, Eigen::Vector3d &gradj, double &cost) {
-    constexpr double mu = 0.01;
+    constexpr double mu = 0.05;
     Eigen::Vector3d thrust_f = a - g_;
     Eigen::Vector3d zb_dot = f_DN(thrust_f) * j;
     double omega_12_sq = zb_dot.squaredNorm();
@@ -678,7 +678,7 @@ namespace traj_opt
   }
 
   bool TrajOpt::LandSmoothGradCost(const Eigen::Vector3d &p, const Eigen::Vector3d &v, Eigen::Vector3d &gradp, Eigen::Vector3d &gradv, double &costl) {
-    constexpr double mu = 0.01;
+    constexpr double mu = 0.1;
     double delta_z = p.z() - land_target_z_;
     delta_z = std::max(delta_z, 0.0);
     

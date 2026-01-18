@@ -39,14 +39,13 @@
         <param name="remote_guide/mean_cnt" type="int" value="20" />
         <param name="remote_guide/reach_target_thr" type="double" value="0.2" />
         <param name="remote_guide/settle_cnt" type="int" value="20" />
-        <param name="remote_guide/exit_dist_thr" type="double" value="0.4" />
+        <param name="remote_guide/exit_dist_thr" type="double" value="0.5" />
         <param name="remote_guide/exit_res_thr" type="double" value="0.25" />
-        <param name="remote_guide/step_gamma" type="double" value="0.3" />
-        <param name="remote_guide/step_min" type="double" value="0.1" />
-        <param name="remote_guide/step_max" type="double" value="0.8" />
+        <param name="remote_guide/step_gamma" type="double" value="0.5" />
+        <param name="remote_guide/step_min" type="double" value="0.3" />
+        <param name="remote_guide/step_max" type="double" value="1.0" />
         <param name="remote_guide/res_gate_max" type="double" value="0.5" />
         <param name="remote_guide/res_gate_rms" type="double" value="0.25" />
-
         <!-- 上层 (z = +0.3) -->
         <param name="remote_guide/p_set_1_x" type="double" value=" 0.50" />
         <param name="remote_guide/p_set_1_y" type="double" value=" 0.00" />
@@ -68,7 +67,6 @@
         <param name="remote_guide/p_set_6_x" type="double" value=" 0.25" />
         <param name="remote_guide/p_set_6_y" type="double" value="-0.43" />
         <param name="remote_guide/p_set_6_z" type="double" value="-0.30" />
-
         <param name="remote_guide/go4_point_wait_count" type="int" value="60" />
         <param name="remote_guide/fly_away_test" type="bool" value="false" />
         
@@ -85,14 +83,14 @@
         <param name="traj_opt/amax" value="5.0"/>
         <param name="traj_opt/jmax" value="20.0"/>
         <param name="traj_opt/omega_max" value="2.0"/>
-        <param name="traj_opt/rhoT" value="10000.0"/>
-        <param name="traj_opt/rhoP" value="100000.0"/>
+        <param name="traj_opt/rhoT" value="2000.0"/>
+        <param name="traj_opt/rhoP" value="60000.0"/>
         <param name="traj_opt/rhoV" value="10000.0"/>
         <param name="traj_opt/rhoA" value="1000.0"/>
-        <param name="traj_opt/rhoJ" value="100.0"/>
+        <param name="traj_opt/rhoJ" value="1000.0"/>
         <param name="traj_opt/rhoD" value="10000.0"/> 
-        <param name="traj_opt/rhoC" value="100000.0"/> 
-        <param name="traj_opt/rhoLV" value="100000.0"/>                                 
+        <param name="traj_opt/rhoC" value="50000.0"/> 
+        <param name="traj_opt/rhoLV" value="80000.0"/>                                 
         <param name="traj_opt/rhoOmega" value="10000.0"/>
         <param name="traj_opt/LV_max" value="0.4"/>
         <param name="traj_opt/LV_min" value="0.15"/>
