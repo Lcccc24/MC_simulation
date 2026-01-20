@@ -165,21 +165,24 @@ public:
     void Reset()
     {
         // R_ = SO3(q_es);
+        // 20260119 lc add
+        // 如果重复关闭开启eskf 需要清空状态量 否则下次进入会导致状态不连续 导致eskf输出不准确
         first_vision_ = true;
     }
 
 private:
     void BuildProcessNoise(const Options &options)
     {
+        double dt = options.imu_dt_;
         double ev = options.acce_var_;
         double et = options.gyro_var_;
         double eg = options.bias_gyro_var_;
         double ea = options.bias_acce_var_;
         
-        double ev2 = ev * ev;
-        double et2 = et * et;
-        double eg2 = eg * eg;
-        double ea2 = ea * ea;
+        double ev2 = ev * ev * dt;
+        double et2 = et * et * dt;
+        double eg2 = eg * eg * dt;
+        double ea2 = ea * ea * dt;
 
         // 设置过程噪声 TODO
         Q_.diagonal() << 0, 0, 0, ev2, ev2, ev2, et2, et2, et2, ea2, ea2, ea2, eg2, eg2, eg2, 0, 0, 0;
