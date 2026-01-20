@@ -9,7 +9,8 @@ LandingTargetPose::LandingTargetPose(ros::NodeHandle &nh) : nh_(nh) //, tf_liste
     m_uav_local_pos_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>("/AVC/mavros/local_position/pose", 1, &LandingTargetPose::M_LocalPosCallback, this);
     tag_detection_sub_ = nh_.subscribe<apriltag_ros::AprilTagDetectionArray>(tag_param_.topic_name, 1, &LandingTargetPose::TagDetectionCallback, this);
     uwb_sub_ = nh_.subscribe<std_msgs::Float64>("/fake_uwb_distance", 10, &LandingTargetPose::UwbDistanceCallback, this);
-        coord_align_sub_ = nh_.subscribe<geometry_msgs::Vector3>("/coord_align", 1, &LandingTargetPose::CoordAlignCallback, this);
+    coord_align_sub_ = nh_.subscribe<geometry_msgs::Vector3>("/coord_align", 1, &LandingTargetPose::CoordAlignCallback, this);
+    eskf_active_sub_ = nh_.subscribe<std_msgs::Bool>("/eskf_active", 1, &LandingTargetPose::EskfActiveCallback, this);
     landing_target_pose_raw_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose_raw", 1);
     landing_target_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_pose/ESKF", 1);
     landing_relative_odom_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/landing_target_relative_odom", 1);
@@ -294,6 +295,10 @@ void LandingTargetPose::CoordAlignCallback(const geometry_msgs::Vector3::ConstPt
     have_coord_align_ = true;
 }
 
+void LandingTargetPose::EskfActiveCallback(const std_msgs::Bool::ConstPtr &msg) {
+    have_eskf_active_ = msg->data;
+}
+
 bool LandingTargetPose::IsTagPoseValid()
 {
     static int eskf_outlier_reject_count = 0;
@@ -393,6 +398,10 @@ void LandingTargetPose::UpdateRelativePosition() {
 void LandingTargetPose::EskfTimerCallback(const ros::TimerEvent &event)
 {
     const double current_time = ros::Time::now().toSec();
+
+    if (!have_eskf_active_) {
+        return;
+    }
 
     // 检查IMU初始化状态
     if (!imu_init_flag_) {

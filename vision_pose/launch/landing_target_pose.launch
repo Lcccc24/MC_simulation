@@ -76,11 +76,10 @@
     <!-- ESKF -->
     <node pkg="vision_pose" type="landing_target_pose_node" name="landing_target_pose" output="screen" />
         <param name="eskf/eskf_hz" type="int" value="100" />
-        <param name="eskf/use_imu0" type="bool" value="true" />
-        <param name="eskf/gyro_var" type="double" value="0.001" /> 
-        <param name="eskf/acce_var" type="double" value="0.01" /> 
-        <param name="eskf/bias_gyro_var" type="double" value="0.000005" />
-        <param name="eskf/bias_acce_var" type="double" value="0.0000001" />>
+        <param name="eskf/gyro_var" type="double" value="0.02" /> 
+        <param name="eskf/acce_var" type="double" value="0.2" /> 
+        <param name="eskf/bias_gyro_var" type="double" value="0.001" />
+        <param name="eskf/bias_acce_var" type="double" value="0.01" />
         <param name="eskf/bias_gyro_x" type="double" value="0.0" />
         <param name="eskf/bias_gyro_y" type="double" value="0.0" />
         <param name="eskf/bias_gyro_z" type="double" value="0.0" />
@@ -89,13 +88,13 @@
         <param name="eskf/bias_acce_z" type="double" value="0.0" />
         <param name="eskf/update_bias_gyro" type="bool" value="true" />
         <param name="eskf/update_bias_acce" type="bool" value="true" />
-        <param name="eskf/vision_xy_noise" type="double" value="0.03" /> 
-        <param name="eskf/vision_z_noise" type="double" value="0.03" /> 
+        <param name="eskf/vision_xy_noise" type="double" value="0.021" /> 
+        <param name="eskf/vision_z_noise" type="double" value="0.021" /> 
         <param name="eskf/vision_roll_pitch_noise" type="double" value="0.01" />
         <param name="eskf/vision_yaw_noise" type="double" value="0.01" />
         <param name="eskf/uwb_noise" type="double" value="0.3" />
-        <param name="eskf/relative_position_xy_noise" type="double" value="0.03" /> 
-        <param name="eskf/relative_position_z_noise" type="double" value="0.03" /> 
+        <param name="eskf/relative_position_xy_noise" type="double" value="0.042" /> 
+        <param name="eskf/relative_position_z_noise" type="double" value="0.042" /> 
         <param name="eskf/gravity" type="double" value="9.8" />
         <param name="tag/topic_name" type="string" value="/tag_detections" />
         <param name="tag/tag_frame_id" type="string" value="tag36h11" />

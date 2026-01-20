@@ -3,6 +3,7 @@
 #include <geometry_msgs/Transform.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Vector3.h>
+#include <std_msgs/Bool.h>
 #include "quadrotor_msgs/GuidanceState.h"
 #include <tf2_ros/transform_listener.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -74,7 +75,7 @@ private:
     frame_param frame_param_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_, m_uav_local_pos_sub_, tag_detection_sub_, uwb_sub_, coord_align_sub_;
+    ros::Subscriber uav_imu_sub_, uav_local_pos_sub_, m_uav_local_pos_sub_, tag_detection_sub_, uwb_sub_, coord_align_sub_, eskf_active_sub_;
     ros::Publisher landing_target_pose_raw_pub_, landing_target_pose_pub_, landing_relative_odom_pub_;
 
     void ImuCallback(const sensor_msgs::Imu::ConstPtr &msg);
@@ -83,6 +84,7 @@ private:
     void TagDetectionCallback(const apriltag_ros::AprilTagDetectionArray::ConstPtr &msg);
     void UwbDistanceCallback(const std_msgs::Float64::ConstPtr &msg);
     void CoordAlignCallback(const geometry_msgs::Vector3::ConstPtr &msg);
+    void EskfActiveCallback(const std_msgs::Bool::ConstPtr &msg);
 
     bool IsTagPoseValid();
     void UpdateRelativePosition();
@@ -100,6 +102,7 @@ private:
     Eigen::Vector3d coord_align_pos_;
     Eigen::Vector3d relative_odom_offset_;
     bool have_coord_align_ = false;
+    bool have_eskf_active_ = false;
 
     geometry_msgs::PoseStamped landing_target_pose_raw_, landing_target_pose_, landing_target_relative_odom_;
 

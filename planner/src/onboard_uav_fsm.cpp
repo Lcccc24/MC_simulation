@@ -73,7 +73,8 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     std::string onboard_msg_sub_name = "/uav" + std::to_string(onboard_uav_param_.uav_id) + "/onboard_msg";
     onboard_msg_sub_ = nh.subscribe(onboard_msg_sub_name, 1, &OnboardUavFsm::OnboardMsgCallback, this);
     // std::string landing_target_pose_topic_name = std::to_string(onboard_uav_param_.uav_id) + "/landing_target_pose";
-    landing_target_pose_sub_ = nh.subscribe("/landing_target_pose/ESKF", 1, &OnboardUavFsm::LandingTargetPoseCallback, this);
+    landing_target_eskf_sub_ = nh.subscribe("/landing_target_pose/ESKF", 1, &OnboardUavFsm::LandingTargetEskfCallback, this);
+    landing_target_vision_sub_ = nh.subscribe("/landing_target_pose_raw", 1, &OnboardUavFsm::LandingTargetVisionsCallback, this);
     heartbeat_pub_ = nh.advertise<std_msgs::Empty>("/heartbeat", 1); 
     takeoff_land_cmd_pub_ = nh.advertise<quadrotor_msgs::TakeoffLand>("/px4ctrl/takeoff_land", 1);
     trajectory_pub_ = nh.advertise<quadrotor_msgs::PolyTraj>("/trajectory", 1);
@@ -84,6 +85,7 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     px4_ctl_choose_ = nh.advertise<std_msgs::Int32>("/px4_ctl_choose", 10);
     position_ctl_pub_ = nh.advertise<mavros_msgs::PositionTarget>("/Sub_UAV/mavros/setpoint_raw/local", 10);
     mother_move_pub_ = nh.advertise<std_msgs::Int32>("/mother_move/cmd",1);
+    eskf_actitve_pub_ = nh.advertise<std_msgs::Bool>("/eskf_active", 1);
     //uwb_distance_sub_  = nh.subscribe("nlink_linktrack_nodeframe2", 1000, &OnboardUavFsm::Uwb_distance_callback,this);
     uwb_distance_sub_  = nh.subscribe("/fake_uwb_distance", 10, &OnboardUavFsm::Uwb_distance_callback,this);
     //远程引导标志位pub与进入降落标志位pub 
@@ -124,14 +126,16 @@ void OnboardUavFsm::Init()
     retry_state_ = RetryStates::INIT;
 
     traj_id_ = 0;
-    is_landing_target_pose_updated_ = false;
+    is_landing_target_eskf_updated_ = false;
+    is_landing_target_vision_updated_ = false;
     hover_flag_ = false;
     is_docking_retry_ = false;
     uav_local_pose_ = {};
     uav_local_vel_ = {};
     uav_odom_ = {};
     onboard_received_ = {};
-    landing_target_pose_ = {};
+    landing_target_eskf_ = {};
+    landing_target_vision_ = {};
     target_pos_ = Eigen::Vector3d::Zero();
     target_vel_ = Eigen::Vector3d::Zero();
     target_q_ = Eigen::Quaterniond::Identity();
@@ -243,10 +247,16 @@ void OnboardUavFsm::OnboardMsgCallback(const quadrotor_msgs::Onboard::ConstPtr &
  * @brief 降落目标位置订阅回调函数
  * @param msg 降落目标位置消息
  */
-void OnboardUavFsm::LandingTargetPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
+void OnboardUavFsm::LandingTargetEskfCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
-    landing_target_pose_ = *msg;
-    is_landing_target_pose_updated_ = true;
+    landing_target_eskf_ = *msg;
+    is_landing_target_eskf_updated_ = true;
+}
+
+void OnboardUavFsm::LandingTargetVisionsCallback(const geometry_msgs::PoseStamped::ConstPtr &msg)
+{
+    landing_target_vision_ = *msg;
+    is_landing_target_vision_updated_ = true;
 }
 
 /**
@@ -276,11 +286,11 @@ bool OnboardUavFsm::OnboardMsgIsReceived(const ros::Time &now_time)
  * @param now_time 时间
  * @return bool 是否接收到
  */
-bool OnboardUavFsm::LandingTargetPoseIsReceived(const ros::Time &now_time)
+bool OnboardUavFsm::LandingTargetEskfIsReceived(const ros::Time &now_time)
 {
     // TODO timeout 需要小于两倍的话题发布周期？这样会不会太短？
-    //ROS_WARN("landing_target_pose_ timeout: %f, %f", now_time.toSec(), landing_target_pose_.header.stamp.toSec());
-    bool is_received = now_time.toSec() - landing_target_pose_.header.stamp.toSec() < msg_timeout_.landing_target;
+    //ROS_WARN("landing_target_eskf_ timeout: %f, %f", now_time.toSec(), landing_target_eskf_.header.stamp.toSec());
+    bool is_received = now_time.toSec() - landing_target_eskf_.header.stamp.toSec() < msg_timeout_.landing_target;
     return is_received;
 }
 
@@ -929,6 +939,11 @@ void OnboardUavFsm::Remote_Guidance()
 
     if (pass_pos && pass_res) {
         onboard_published_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
+        //激活eskf
+        for (int i = 0; i < 10; ++i) {
+            eskf_active_.data = true;
+            eskf_actitve_pub_.publish(eskf_active_);
+        }
         est_dock_world = dock_world;
         PubOnboardMsg();
         ROS_INFO("[RG] REMOTE GUIDANCE COMPLETE");
@@ -1095,12 +1110,12 @@ bool OnboardUavFsm::Circle_Search() {
         is_replan_ = false;
     }
 
-    if (LandingTargetPoseIsReceived(ros::Time::now())) {
-        circle_search_target.x() = landing_target_pose_.pose.position.x;
-        circle_search_target.y() = landing_target_pose_.pose.position.y;
-        first_frame_corrected_pos_.x = landing_target_pose_.pose.position.x;
-        first_frame_corrected_pos_.y = landing_target_pose_.pose.position.y;
-        first_frame_corrected_pos_.z = landing_target_pose_.pose.position.z;
+    if (is_landing_target_vision_updated_ && is_landing_target_eskf_updated_) {
+        circle_search_target.x() = landing_target_eskf_.pose.position.x;
+        circle_search_target.y() = landing_target_eskf_.pose.position.y;
+        first_frame_corrected_pos_.x = landing_target_vision_.pose.position.x;
+        first_frame_corrected_pos_.y = landing_target_vision_.pose.position.y;
+        first_frame_corrected_pos_.z = landing_target_vision_.pose.position.z;
         detect = true;
     }
 
@@ -1232,7 +1247,7 @@ void OnboardUavFsm::RunDockingReturn()
     if ((OnboardMsgIsReceived(ros::Time::now()) && IsOnboardCommand(quadrotor_msgs::Onboard::ALLOW_PRECISION_LANDING)) || is_docking_retry_)
     // if (IsOnboardCommand(quadrotor_msgs::Onboard::ALLOW_PRECISION_LANDING))
     {
-        if (LandingTargetPoseIsReceived(ros::Time::now()))
+        if (LandingTargetEskfIsReceived(ros::Time::now()))
         {
             is_first_run_ = true;
             landing_state_ = LandingStates::INIT;
@@ -1306,7 +1321,7 @@ void OnboardUavFsm::RunDockingReturn()
  */
 void OnboardUavFsm::RunDockingLanding()
 {
-    if (!LandingTargetPoseIsReceived(ros::Time::now()))
+    if (!LandingTargetEskfIsReceived(ros::Time::now()))
     {
         retry_state_ = RetryStates::INIT;
         docking_state_ = DockingStates::RETRY;
@@ -1324,9 +1339,9 @@ void OnboardUavFsm::RunDockingLanding()
     // 计算无人机与标签的水平距离
     static Eigen::Vector3d relative_pos = Eigen::Vector3d::Zero();
     static double horizontal_distance = 0.0;
-    relative_pos.x() = landing_target_pose_.pose.position.x - uav_odom_pos_.x();
-    relative_pos.y() = landing_target_pose_.pose.position.y - uav_odom_pos_.y();
-    relative_pos.z() = landing_target_pose_.pose.position.z - uav_odom_pos_.z();
+    relative_pos.x() = landing_target_eskf_.pose.position.x - uav_odom_pos_.x();
+    relative_pos.y() = landing_target_eskf_.pose.position.y - uav_odom_pos_.y();
+    relative_pos.z() = landing_target_eskf_.pose.position.z - uav_odom_pos_.z();
     
     ROS_INFO("relative_pos:%f,%f,%f",relative_pos.x(),relative_pos.y(),relative_pos.z());
     horizontal_distance = relative_pos.head(2).norm();
@@ -1360,14 +1375,14 @@ void OnboardUavFsm::RunDockingLanding()
                 landing_descend_complete_count = 0;
             }
 
-            target_pos_.x() = landing_target_pose_.pose.position.x;
-            target_pos_.y() = landing_target_pose_.pose.position.y;
-            target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.descend_ver_bias;
+            target_pos_.x() = landing_target_eskf_.pose.position.x;
+            target_pos_.y() = landing_target_eskf_.pose.position.y;
+            target_pos_.z() = landing_target_eskf_.pose.position.z + docking_param_.descend_ver_bias;
             target_vel_ = Eigen::Vector3d::Zero();
-            target_q_.x() = landing_target_pose_.pose.orientation.x;
-            target_q_.y() = landing_target_pose_.pose.orientation.y;
-            target_q_.z() = landing_target_pose_.pose.orientation.z;
-            target_q_.w() = landing_target_pose_.pose.orientation.w;
+            target_q_.x() = landing_target_eskf_.pose.orientation.x;
+            target_q_.y() = landing_target_eskf_.pose.orientation.y;
+            target_q_.z() = landing_target_eskf_.pose.orientation.z;
+            target_q_.w() = landing_target_eskf_.pose.orientation.w;
 
             if (PlanTrajectory()) {
                 is_replan_ = false;
@@ -1397,14 +1412,14 @@ void OnboardUavFsm::RunDockingLanding()
                 landing_rec_count = 0;
             }
 
-            target_pos_.x() = landing_target_pose_.pose.position.x;
-            target_pos_.y() = landing_target_pose_.pose.position.y;
-            target_pos_.z() = landing_target_pose_.pose.position.z + docking_param_.rec_ver_bias;
+            target_pos_.x() = landing_target_eskf_.pose.position.x;
+            target_pos_.y() = landing_target_eskf_.pose.position.y;
+            target_pos_.z() = landing_target_eskf_.pose.position.z + docking_param_.rec_ver_bias;
             target_vel_ = Eigen::Vector3d::Zero();
-            target_q_.x() = landing_target_pose_.pose.orientation.x;
-            target_q_.y() = landing_target_pose_.pose.orientation.y;
-            target_q_.z() = landing_target_pose_.pose.orientation.z;
-            target_q_.w() = landing_target_pose_.pose.orientation.w;
+            target_q_.x() = landing_target_eskf_.pose.orientation.x;
+            target_q_.y() = landing_target_eskf_.pose.orientation.y;
+            target_q_.z() = landing_target_eskf_.pose.orientation.z;
+            target_q_.w() = landing_target_eskf_.pose.orientation.w;
 
             if (PlanTrajectory())
             {
@@ -1453,17 +1468,17 @@ void OnboardUavFsm::RunDockingLanding()
             }
 
             // 当目标点更新时，重新规划轨迹
-            if (is_landing_target_pose_updated_)
+            if (is_landing_target_eskf_updated_)
             {
                 is_replan_ = true;
-                target_pos_.x() = landing_target_pose_.pose.position.x;
-                target_pos_.y() = landing_target_pose_.pose.position.y;
-                target_pos_.z() = landing_target_pose_.pose.position.z;
+                target_pos_.x() = landing_target_eskf_.pose.position.x;
+                target_pos_.y() = landing_target_eskf_.pose.position.y;
+                target_pos_.z() = landing_target_eskf_.pose.position.z;
                 target_vel_ = Eigen::Vector3d::Zero();
-                target_q_.x() = landing_target_pose_.pose.orientation.x;
-                target_q_.y() = landing_target_pose_.pose.orientation.y;
-                target_q_.z() = landing_target_pose_.pose.orientation.z;
-                target_q_.w() = landing_target_pose_.pose.orientation.w;
+                target_q_.x() = landing_target_eskf_.pose.orientation.x;
+                target_q_.y() = landing_target_eskf_.pose.orientation.y;
+                target_q_.z() = landing_target_eskf_.pose.orientation.z;
+                target_q_.w() = landing_target_eskf_.pose.orientation.w;
             }
 
             //如果最终降落阶段没识别到二维码，则抬高高度
@@ -1527,7 +1542,7 @@ void OnboardUavFsm::RunDockingRetry()
         case RetryStates::HOVER_SEARCH:
         {
             // 当再次获取到降落目标位置时，重新进入降落状态
-            if (LandingTargetPoseIsReceived(ros::Time::now()))
+            if (LandingTargetEskfIsReceived(ros::Time::now()))
             {
                 ROS_INFO("\033[32mDOCKING_RETRY: Target detected!\033[0m");
                 is_first_run_ = true;
@@ -1568,7 +1583,7 @@ void OnboardUavFsm::RunDockingRetry()
         case RetryStates::CLIMBING:
         {
             // 当再次获取到降落目标位置时，重新进入降落状态
-            if (LandingTargetPoseIsReceived(ros::Time::now()))
+            if (LandingTargetEskfIsReceived(ros::Time::now()))
             {
                 ROS_INFO("\033[32mDOCKING_RETRY: Target detected!\033[0m");
                 is_first_run_ = true;
@@ -1627,9 +1642,9 @@ void OnboardUavFsm::FillLandingParams() {
     land_params_.m_uav_pos.z() = m_uav_odom_pos_.z();
 
     if (is_landing_) {
-        land_params_.land_x = landing_target_pose_.pose.position.x;
-        land_params_.land_y = landing_target_pose_.pose.position.y;
-        land_params_.land_z = landing_target_pose_.pose.position.z;
+        land_params_.land_x = landing_target_eskf_.pose.position.x;
+        land_params_.land_y = landing_target_eskf_.pose.position.y;
+        land_params_.land_z = landing_target_eskf_.pose.position.z;
     }
 }
 

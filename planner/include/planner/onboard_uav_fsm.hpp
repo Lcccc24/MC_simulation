@@ -202,14 +202,15 @@ private:
     msg_timeout msg_timeout_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_state_sub_, uav_local_pose_sub_, m_uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_pose_sub_, uwb_distance_sub_;
-    ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_, coord_align_pub_;
+    ros::Subscriber uav_state_sub_, uav_local_pose_sub_, m_uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_eskf_sub_, landing_target_vision_sub_, uwb_distance_sub_;
+    ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_, coord_align_pub_, eskf_actitve_pub_;
     ros::Publisher remote_ctrl_pub_, fsm_state_pub_;
     ros::ServiceClient arm_disarm_client_;
 
     ros::Publisher px4_ctl_choose_,position_ctl_pub_;
     std_msgs::Int32 px4_choose_msg;
     mavros_msgs::PositionTarget P_target;
+    std_msgs::Bool eskf_active_;
 
     quadrotor_msgs::FsmState fsm_state_;
     quadrotor_msgs::GuidanceState guidance_state_;
@@ -249,10 +250,11 @@ private:
     void UavStateCallback(const mavros_msgs::State::ConstPtr &msg);
     void UavOdomCallback(const nav_msgs::Odometry::ConstPtr &msg);
     void OnboardMsgCallback(const quadrotor_msgs::Onboard::ConstPtr &msg);
-    void LandingTargetPoseCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+    void LandingTargetEskfCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+    void LandingTargetVisionsCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     bool OdomIsReceived(const ros::Time &now_time);
     bool OnboardMsgIsReceived(const ros::Time &now_time);
-    bool LandingTargetPoseIsReceived(const ros::Time &now_time);
+    bool LandingTargetEskfIsReceived(const ros::Time &now_time);
     bool IsOnboardCommand(const int &flight_command);
     bool IsOnboardStatus(const int &flight_status);
     void Pub_px4_cmd(float target_x, float target_y, float target_z);
@@ -278,8 +280,10 @@ private:
     Eigen::Quaterniond uav_odom_orient_;                           // 无人机里程计姿态
     quadrotor_msgs::Onboard onboard_received_;                     // 接收到的母机信号
     quadrotor_msgs::Onboard onboard_published_;                    // 发布的母机信号
-    geometry_msgs::PoseStamped landing_target_pose_;               // 降落目标位置 local ENU
-    bool is_landing_target_pose_updated_;                          // 判断降落目标位姿是否刷新
+    geometry_msgs::PoseStamped landing_target_eskf_;               // 降落目标位置 local ENU
+    geometry_msgs::PoseStamped landing_target_vision_;             // 降落目标位置 视觉观测 用于对齐坐标系
+    bool is_landing_target_eskf_updated_;                          // 判断降落目标位姿是否刷新
+    bool is_landing_target_vision_updated_;                        // 判断视觉观测降落目标位姿是否刷新
     geometry_msgs::Vector3 first_frame_corrected_pos_;             // search时观测到的数据用来矫正relative_odom坐标系
 
     bool perform_uav_disarm_;       // 是否上锁
