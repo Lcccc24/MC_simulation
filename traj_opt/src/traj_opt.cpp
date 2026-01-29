@@ -49,8 +49,20 @@ namespace traj_opt
   //推力方向导数
   Eigen::MatrixXd TrajOpt::f_DN(const Eigen::Vector3d &x)
   {
+    const double eps = 1e-9;
+
+    if (!x.allFinite()) {
+      std::cerr << "f_DN: x is not finite: " << x.transpose() << std::endl;
+      return Eigen::Matrix3d::Zero();
+    }
+
     double x_norm_2 = x.squaredNorm();
-    return (Eigen::MatrixXd::Identity(3, 3) - x * x.transpose() / x_norm_2) / sqrt(x_norm_2);
+
+    if (!(x_norm_2 > eps)) { 
+      return Eigen::Matrix3d::Zero();
+    }
+
+    return (Eigen::Matrix3d::Identity() - x * x.transpose() / x_norm_2) / std::sqrt(x_norm_2);
   }
 
   //推力方向导数
@@ -181,22 +193,40 @@ namespace traj_opt
 
   double TrajOpt::getMaxOmega(Trajectory &traj)
   {
-    double dt = 0.01;
+    const double dt = 0.05;
     double max_omega = 0;
-    for (double t = 0; t < traj.getTotalDuration(); t += dt)
+    const double T = traj.getTotalDuration();
+
+    for (double t = 0; t < T; t += dt)
     {
       Eigen::Vector3d a = traj.getAcc(t);
       Eigen::Vector3d j = traj.getJer(t);
-      Eigen::Vector3d thrust = a - g_;
-      Eigen::Vector3d zb_dot = f_DN(thrust) * j;
-      double omega12 = zb_dot.norm();
-      if (omega12 > max_omega)
-      {
-        max_omega = omega12;
+
+      if (!a.allFinite() || !j.allFinite() || !g_.allFinite()) {
+        std::cerr << "[NaN] t=" << t
+                  << " a=" << a.transpose()
+                  << " j=" << j.transpose()
+                  << " g=" << g_.transpose()
+                  << " T=" << T
+                  << std::endl;
+        break;
       }
+
+      Eigen::Vector3d thrust = a - g_;
+      if (!thrust.allFinite()) {
+        std::cerr << "[NaN] t=" << t << " thrust=" << thrust.transpose() << std::endl;
+        continue;
+      }
+
+      Eigen::Vector3d zb_dot = f_DN(thrust) * j;
+      if (!zb_dot.allFinite()) continue;
+
+      double omega12 = zb_dot.norm();
+      if (std::isfinite(omega12) && omega12 > max_omega) max_omega = omega12;
     }
     return max_omega;
   }
+
 
   bool TrajOpt::trans_bvp_traj(Trajectory &traj)
   {

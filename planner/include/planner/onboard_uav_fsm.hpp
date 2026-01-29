@@ -196,13 +196,27 @@ private:
         bool fly_away_test;
     };
 
+    struct mission_param
+    {
+        double mission_pt1_x;
+        double mission_pt1_y;
+        double mission_pt1_z;
+        double mission_pt2_x;
+        double mission_pt2_y;
+        double mission_pt2_z;
+        double mission_pt3_x;
+        double mission_pt3_y;
+        double mission_pt3_z;
+    };
+
     onboard_uav_param onboard_uav_param_;
     docking_param docking_param_;
     remote_guide_param remote_guide_param_;
     msg_timeout msg_timeout_;
+    mission_param mission_param_;
 
     ros::NodeHandle nh_;
-    ros::Subscriber uav_state_sub_, uav_local_pose_sub_, m_uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_eskf_sub_, landing_target_vision_sub_, uwb_distance_sub_;
+    ros::Subscriber uav_state_sub_, uav_local_pose_sub_, m_uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_eskf_sub_, landing_target_vision_sub_, uwb_distance_sub_, mother_ready_sub_;
     ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_, coord_align_pub_, eskf_actitve_pub_;
     ros::Publisher remote_ctrl_pub_, fsm_state_pub_;
     ros::ServiceClient arm_disarm_client_;
@@ -250,6 +264,7 @@ private:
     void UavStateCallback(const mavros_msgs::State::ConstPtr &msg);
     void UavOdomCallback(const nav_msgs::Odometry::ConstPtr &msg);
     void OnboardMsgCallback(const quadrotor_msgs::Onboard::ConstPtr &msg);
+    void MotherReadyCallback(const std_msgs::Bool::ConstPtr &msg);
     void LandingTargetEskfCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     void LandingTargetVisionsCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
     bool OdomIsReceived(const ros::Time &now_time);
@@ -285,6 +300,9 @@ private:
     bool is_landing_target_eskf_updated_;                          // 判断降落目标位姿是否刷新
     bool is_landing_target_vision_updated_;                        // 判断视觉观测降落目标位姿是否刷新
     geometry_msgs::Vector3 first_frame_corrected_pos_;             // search时观测到的数据用来矫正relative_odom坐标系
+
+    Eigen::Vector3d mission_pt[3];
+    bool mother_ready = false;
 
     bool perform_uav_disarm_;       // 是否上锁
     std::thread uav_disarm_thread_; // 无人机上锁线程

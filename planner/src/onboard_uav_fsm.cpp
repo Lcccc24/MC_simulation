@@ -43,21 +43,37 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("remote_guide/step_gamma", remote_guide_param_.step_gamma, 0.05);
     nh.param("remote_guide/step_min", remote_guide_param_.step_min, 0.5);
     nh.param("remote_guide/step_max", remote_guide_param_.step_max, 2.0);
-    nh.param("remote_guide/p_set_1_x", remote_guide_param_.p_set_1_x, 1.0);
-    nh.param("remote_guide/p_set_1_y", remote_guide_param_.p_set_1_y, 1.0);
-    nh.param("remote_guide/p_set_1_z", remote_guide_param_.p_set_1_z, 1.0);
-    nh.param("remote_guide/p_set_2_x", remote_guide_param_.p_set_2_x, -1.0);
-    nh.param("remote_guide/p_set_2_y", remote_guide_param_.p_set_2_y, 1.0);
-    nh.param("remote_guide/p_set_2_z", remote_guide_param_.p_set_2_z, 0.6);
-    nh.param("remote_guide/p_set_3_x", remote_guide_param_.p_set_3_x, -1.0);
-    nh.param("remote_guide/p_set_3_y", remote_guide_param_.p_set_3_y, -1.0);
-    nh.param("remote_guide/p_set_3_z", remote_guide_param_.p_set_3_z, 1.4);
-    nh.param("remote_guide/p_set_4_x", remote_guide_param_.p_set_4_x, 1.0);
-    nh.param("remote_guide/p_set_4_y", remote_guide_param_.p_set_4_y, -1.0);
-    nh.param("remote_guide/p_set_4_z", remote_guide_param_.p_set_4_z, 0.9);
+    nh.param("remote_guide/p_set_1_x", remote_guide_param_.p_set_1_x, 0.5);
+    nh.param("remote_guide/p_set_1_y", remote_guide_param_.p_set_1_y, 0.0);
+    nh.param("remote_guide/p_set_1_z", remote_guide_param_.p_set_1_z, 0.3);
+    nh.param("remote_guide/p_set_2_x", remote_guide_param_.p_set_2_x, 0.25);
+    nh.param("remote_guide/p_set_2_y", remote_guide_param_.p_set_2_y, 0.43);
+    nh.param("remote_guide/p_set_2_z", remote_guide_param_.p_set_2_z, 0.3);
+    nh.param("remote_guide/p_set_3_x", remote_guide_param_.p_set_3_x, -0.25);
+    nh.param("remote_guide/p_set_3_y", remote_guide_param_.p_set_3_y, 0.43);
+    nh.param("remote_guide/p_set_3_z", remote_guide_param_.p_set_3_z, 0.0);
+    nh.param("remote_guide/p_set_4_x", remote_guide_param_.p_set_4_x, -0.5);
+    nh.param("remote_guide/p_set_4_y", remote_guide_param_.p_set_4_y, 0.0);
+    nh.param("remote_guide/p_set_4_z", remote_guide_param_.p_set_4_z, 0.0);
+    nh.param("remote_guide/p_set_5_x", remote_guide_param_.p_set_5_x, -0.25);
+    nh.param("remote_guide/p_set_5_y", remote_guide_param_.p_set_5_y, -0.43);
+    nh.param("remote_guide/p_set_5_z", remote_guide_param_.p_set_5_z, -0.3);
+    nh.param("remote_guide/p_set_6_x", remote_guide_param_.p_set_6_x, 0.25);
+    nh.param("remote_guide/p_set_6_y", remote_guide_param_.p_set_6_y, -0.43);
+    nh.param("remote_guide/p_set_6_z", remote_guide_param_.p_set_6_z, -0.3);
     nh.param("remote_guide/go4_point_wait_count", remote_guide_param_.go4_point_wait_count, 60);
-
     nh.param("remote_guide/fly_away_test", remote_guide_param_.fly_away_test, false);
+
+    nh.param("mission/mission_pt1_x", mission_param_.mission_pt1_x, 3.0);
+    nh.param("mission/mission_pt1_y", mission_param_.mission_pt1_y, 0.0);
+    nh.param("mission/mission_pt1_z", mission_param_.mission_pt1_z, 2.0);
+    nh.param("mission/mission_pt2_x", mission_param_.mission_pt2_x, 0.0);
+    nh.param("mission/mission_pt2_y", mission_param_.mission_pt2_y, 10.0);
+    nh.param("mission/mission_pt2_z", mission_param_.mission_pt2_z, 2.0);
+    nh.param("mission/mission_pt3_x", mission_param_.mission_pt3_x, 3.0);
+    nh.param("mission/mission_pt3_y", mission_param_.mission_pt3_y, 10.0);
+    nh.param("mission/mission_pt3_z", mission_param_.mission_pt3_z, 2.0);
+
     nh.param("trajectory/normal_minco_piece", normal_minco_piece_, 10);
     nh.param("trajectory/landing_minco_piece", landing_minco_piece_, 5);
 
@@ -92,7 +108,8 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     remote_ctrl_pub_ = nh.advertise<quadrotor_msgs::GuidanceState>("/remote_ctrl/state", 1);
     fsm_state_pub_ = nh.advertise<quadrotor_msgs::FsmState>("/fsm_state", 1);
     coord_align_pub_ = nh.advertise<geometry_msgs::Vector3>("/coord_align", 1);
-
+    mother_ready_sub_ = nh.subscribe("/mother_arrived", 1, &OnboardUavFsm::MotherReadyCallback, this);
+    
     // 创建路径规划器实例
     traj_opt_ptr_ = std::make_shared<traj_opt::TrajOpt>(nh);
     // 创建可视化实例
@@ -148,6 +165,16 @@ void OnboardUavFsm::Init()
     dock_r2m.x() = remote_guide_param_.dock_r2m_x;
     dock_r2m.y() = remote_guide_param_.dock_r2m_y;
     dock_r2m.z() = remote_guide_param_.dock_r2m_z;
+
+    mission_pt[0].x() = mission_param_.mission_pt1_x;
+    mission_pt[0].y() = mission_param_.mission_pt1_y;
+    mission_pt[0].z() = mission_param_.mission_pt1_z;
+    mission_pt[1].x() = mission_param_.mission_pt2_x;
+    mission_pt[1].y() = mission_param_.mission_pt2_y;
+    mission_pt[1].z() = mission_param_.mission_pt2_z;
+    mission_pt[2].x() = mission_param_.mission_pt3_x;
+    mission_pt[2].y() = mission_param_.mission_pt3_y;
+    mission_pt[2].z() = mission_param_.mission_pt3_z;
 
     px4_choose_msg.data = 0;
     px4_ctl_choose_.publish(px4_choose_msg);
@@ -241,6 +268,11 @@ void OnboardUavFsm::OnboardMsgCallback(const quadrotor_msgs::Onboard::ConstPtr &
     // TODO 筛选无人机 ID
     onboard_received_ = *msg;
     //ROS_INFO("onboard_received_ : %f,%f,%f",onboard_received_.position.x,onboard_received_.position.y,onboard_received_.position.z);
+}
+
+void OnboardUavFsm::MotherReadyCallback(const std_msgs::Bool::ConstPtr &msg)
+{
+    mother_ready = msg->data;
 }
 
 /**
@@ -647,39 +679,43 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
  */
 void OnboardUavFsm::RunMissionMode()
 {
-    static int count;
+    static int count = 0;
+    static int idx = 0;
+
+    const int mission_pt_count = sizeof(mission_pt) / sizeof(mission_pt[0]);
 
     // 执行任务
-    ROS_INFO("RUN MISSION POINT");
-    if (is_first_run_)
-    {
-        // 设置航点
-        target_pos_.x() = onboard_received_.position.x - onboard_uav_param_.origin_pos_offset[0];
-        target_pos_.y() = onboard_received_.position.y - onboard_uav_param_.origin_pos_offset[1];
-        target_pos_.z() = onboard_received_.position.z - onboard_uav_param_.origin_pos_offset[2];
+    ROS_WARN_THROTTLE(0.5, "RUN MISSION POINT: %d", idx);
+
+    // 设置航点
+    if (idx < mission_pt_count) {
+        target_pos_ = mission_pt[idx];
         target_vel_ = Eigen::Vector3d::Zero();
         target_q_ = Eigen::Quaterniond::Identity();
-        hover_flag_ = false;
-        ROS_INFO("target_pos_ : %f,%f,%f",target_pos_.x(),target_pos_.y(),target_pos_.z());
-        // DEBUG 打印目标位姿
     }
+    hover_flag_ = false;
+    ROS_WARN_THROTTLE(0.5, "target_pos_ : %f,%f,%f",target_pos_.x(),target_pos_.y(),target_pos_.z());
+    // DEBUG 打印目标位姿
 
-    // 到达指定点后，发送 Onboard::MISSION_COMPLETE，等待下一步指令
     if ((uav_odom_pos_ - target_pos_).norm() < 0.3)
     {
         count ++;
-        if(count > 0 && count < 20){
-            std_msgs::Int32 mother_move_msg;
-            mother_move_msg.data = 1;
-            mother_move_pub_.publish(mother_move_msg);
-        }
-
-        if(count > remote_guide_param_.go4_point_wait_count){
-            count = 0;
-            //onboard_published_.flight_command = quadrotor_msgs::Onboard::MISSION;
-            onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
-            PubOnboardMsg();
-            return;
+        if(count > 20){
+            if (idx == mission_pt_count-1) {  
+                if (mother_ready) {
+                    onboard_published_.flight_status = quadrotor_msgs::Onboard::MISSION_COMPLETE;
+                    PubOnboardMsg();
+                    count = 0;
+                    idx = 0;
+                    return;
+                } else {
+                    count = 0; 
+                    return;
+                }
+            } else {
+                count = 0;
+                idx ++;
+            }
         }
     }
 
@@ -1365,6 +1401,12 @@ void OnboardUavFsm::RunDockingLanding()
                 landing_descend_complete_count++;
                 if(landing_descend_complete_count > 5)
                 {
+                    first_frame_corrected_pos_.x = landing_target_vision_.pose.position.x;
+                    first_frame_corrected_pos_.y = landing_target_vision_.pose.position.y;
+                    first_frame_corrected_pos_.z = landing_target_vision_.pose.position.z;
+                    for(int i = 0; i < 10; ++i) {
+                        coord_align_pub_.publish(first_frame_corrected_pos_);
+                    }
                     landing_state_ = LandingStates::RE_CURRATE;
                     ROS_INFO("\033[32mDOCKING_DESCEND_ABOVE_TARGET: Switch to RE_CURRATE\033[0m");
                     break;
@@ -1402,6 +1444,12 @@ void OnboardUavFsm::RunDockingLanding()
                 landing_rec_count++;
                 if(landing_rec_count > 5)
                 {
+                    first_frame_corrected_pos_.x = landing_target_vision_.pose.position.x;
+                    first_frame_corrected_pos_.y = landing_target_vision_.pose.position.y;
+                    first_frame_corrected_pos_.z = landing_target_vision_.pose.position.z;
+                    for(int i = 0; i < 10; ++i) {
+                        coord_align_pub_.publish(first_frame_corrected_pos_);
+                    }
                     landing_state_ = LandingStates::FINAL_LANDING;
                     ROS_INFO("\033[32mDOCKING_RE_CURRATE: Switch to FINAL_LANDING\033[0m");
                     break;

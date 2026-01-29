@@ -11,6 +11,7 @@
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
 #include <std_msgs/Int32.h>
+#include <std_msgs/Bool.h>
 
 #define VELOCITY2D_CONTROL 0b011111000111 //设置好对应的掩码，从右往左依次对应PX/PY/PZ/VX/VY/VZ/AX/AY/AZ/FORCE/YAW/YAW-RATE,设置掩码时注意要用的就加上去，用的就不加，这里是用二进制表示，我需要用到VX/VY/VZ/YAW，所以这四个我给0，其他都是1.
 #define POSITION_CONTROL 0b011111111000 //设置好对应的掩码，从右往左依次对应PX/PY/PZ/VX/VY/VZ/AX/AY/AZ/FORCE/YAW/YAW-RATE
@@ -18,6 +19,7 @@
 bool is_offboard = false;
 mavros_msgs::State current_state;
 std_msgs::Int32 move_cmd;
+std_msgs::Bool mother_arrived;
 void state_cb(const mavros_msgs::State::ConstPtr& msg){
     current_state = *msg;
 }
@@ -41,14 +43,15 @@ int main(int argc, char **argv)
     //发布无人机位姿信息
     ros::Publisher local_pos_pub = nh.advertise<mavros_msgs::PositionTarget>
             ("/AVC/mavros/setpoint_raw/local", 10);
+
+    ros::Publisher mother_arrive_pub_ = nh.advertise<std_msgs::Bool>("/mother_arrived", 2);
+
     //定义起飞服务客户端（起飞，降落）
     ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>
             ("/AVC/mavros/cmd/arming");
     //定义设置模式服务客户端（设置offboard模式）
     ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>
             ("/AVC/mavros/set_mode");
-
-
 
     //the setpoint publishing rate MUST be faster than 2Hz
     ros::Rate rate(20.0);
@@ -131,8 +134,10 @@ int main(int argc, char **argv)
 
         else {
             goal.position.x = -1.0;
-            goal.position.y = -1.0;
+            goal.position.y = 10.0;
             goal.position.z = 2.0;
+            mother_arrived.data = true;
+            mother_arrive_pub_.publish(mother_arrived);
         }
 
         // 计算经过的时间（秒）

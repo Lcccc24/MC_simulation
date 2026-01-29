@@ -31,9 +31,19 @@
         <param name="docking/retry_climb_height" type="double" value="2.0" />
         <param name="docking/allowed_retry_num" type="int" value="10" />
 
+        <param name="mission/mission_pt1_x" type="double" value="3.0" />
+        <param name="mission/mission_pt1_y" type="double" value="0.0" />
+        <param name="mission/mission_pt1_z" type="double" value="4.0" />
+        <param name="mission/mission_pt2_x" type="double" value="0.0" />
+        <param name="mission/mission_pt2_y" type="double" value="10.0" />
+        <param name="mission/mission_pt2_z" type="double" value="4.0" />
+        <param name="mission/mission_pt3_x" type="double" value="3.0" />
+        <param name="mission/mission_pt3_y" type="double" value="10.0" />
+        <param name="mission/mission_pt3_z" type="double" value="4.0" />
+
         <param name="remote_guide/dock_r2m_x" type="double" value="0.0" />
         <param name="remote_guide/dock_r2m_y" type="double" value="0.0" />
-        <param name="remote_guide/dock_r2m_z" type="double" value="2.0" />
+        <param name="remote_guide/dock_r2m_z" type="double" value="1.4" />
         <param name="remote_guide/win_anchor_n" type="int" value="6" />
         <param name="remote_guide/search_flag" type="bool" value="true" />
         <param name="remote_guide/mean_cnt" type="int" value="20" />
