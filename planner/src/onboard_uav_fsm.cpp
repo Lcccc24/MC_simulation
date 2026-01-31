@@ -61,6 +61,12 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     nh.param("remote_guide/p_set_6_x", remote_guide_param_.p_set_6_x, 0.25);
     nh.param("remote_guide/p_set_6_y", remote_guide_param_.p_set_6_y, -0.43);
     nh.param("remote_guide/p_set_6_z", remote_guide_param_.p_set_6_z, -0.3);
+    nh.param("remote_guide/p_set_7_x", remote_guide_param_.p_set_7_x, -0.25);
+    nh.param("remote_guide/p_set_7_y", remote_guide_param_.p_set_7_y, -0.43);
+    nh.param("remote_guide/p_set_7_z", remote_guide_param_.p_set_7_z, -0.3);
+    nh.param("remote_guide/p_set_8_x", remote_guide_param_.p_set_8_x, 0.25);
+    nh.param("remote_guide/p_set_8_y", remote_guide_param_.p_set_8_y, -0.43);
+    nh.param("remote_guide/p_set_8_z", remote_guide_param_.p_set_8_z, -0.3);
     nh.param("remote_guide/go4_point_wait_count", remote_guide_param_.go4_point_wait_count, 60);
     nh.param("remote_guide/fly_away_test", remote_guide_param_.fly_away_test, false);
 
@@ -746,6 +752,12 @@ void OnboardUavFsm::Remote_Guidance()
                  rg_first_ref_world_.x(), rg_first_ref_world_.y(), rg_first_ref_world_.z());
     }
 
+    if (rg_stage_ == 2 && remote_guide_param_.fly_away_test) {
+        std_msgs::Int32 mother_move_msg;
+        mother_move_msg.data = 1;
+        mother_move_pub_.publish(mother_move_msg);
+    }
+
     if (!rg_base_inited_) {
         rg_base_inited_ = true;
 
@@ -789,6 +801,12 @@ void OnboardUavFsm::Remote_Guidance()
             case 5: return Eigen::Vector3d(remote_guide_param_.p_set_6_x,
                                            remote_guide_param_.p_set_6_y,
                                            remote_guide_param_.p_set_6_z);
+            case 6: return Eigen::Vector3d(remote_guide_param_.p_set_7_x,
+                                           remote_guide_param_.p_set_7_y,
+                                           remote_guide_param_.p_set_7_z);
+            case 7: return Eigen::Vector3d(remote_guide_param_.p_set_8_x,
+                                           remote_guide_param_.p_set_8_y,
+                                           remote_guide_param_.p_set_8_z);
             default: return Eigen::Vector3d(0, 0, 0);
         }
     };
@@ -805,7 +823,7 @@ void OnboardUavFsm::Remote_Guidance()
         double max_res = 0.0, rms_res = 0.0;
 
         if (!estimate_mother_from_window(rg_anchors_win_, mother_local, max_res, rms_res)) {
-            ROS_WARN("[RG] estimate failed (anchors_win=4).");
+            ROS_WARN("[RG] estimate failed.");
             rg_have_solution_ = false;
             rg_last_max_res_  = std::numeric_limits<double>::infinity();
             rg_last_rms_res_  = std::numeric_limits<double>::infinity();
@@ -860,6 +878,7 @@ void OnboardUavFsm::Remote_Guidance()
     const Eigen::Vector3d sp_local = rg_base_pos_local_ + pattern_local(rg_stage_);
     const Eigen::Vector3d sp_world = rg_first_ref_world_ + sp_local;
 
+
     target_pos_ = sp_world;
     target_vel_ = Eigen::Vector3d::Zero();
     target_q_   = Eigen::Quaterniond::Identity();
@@ -912,6 +931,7 @@ void OnboardUavFsm::Remote_Guidance()
                 Eigen::Vector3d p_mean_world = p_sum / std::max(1, (int)p_buf_world.size());
                 Eigen::Vector3d p_mean_local = p_mean_world - rg_first_ref_world_;
 
+                rg_sample_pos_ = p_mean_world;
                 RangeSample a;
                 a.p_local = p_mean_local;
                 a.r       = r_mean;
@@ -1841,6 +1861,9 @@ void OnboardUavFsm::Pub_Guidance_State()
     guidance_state_.geo_est_x = rg_last_mother_world_.x();
     guidance_state_.geo_est_y = rg_last_mother_world_.y();
     guidance_state_.geo_est_z = rg_last_mother_world_.z();
+    guidance_state_.rg_sample_pos_x = rg_sample_pos_.x();
+    guidance_state_.rg_sample_pos_y = rg_sample_pos_.y();
+    guidance_state_.rg_sample_pos_z = rg_sample_pos_.z();
 
     guidance_state_.max_residual = rg_last_max_res_;
     guidance_state_.rms_residual = rg_last_rms_res_;

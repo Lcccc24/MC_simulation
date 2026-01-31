@@ -115,9 +115,9 @@ int main(int argc, char **argv)
         }
 
         if (move_cmd.data == 1) {
-            goal.position.x = 1.0;
-            goal.position.y = 2.0;
-            goal.position.z = 3.0;
+            goal.position.x = 3.0;
+            goal.position.y = -5.0;
+            goal.position.z = 1.2;
         }
 
         else if (move_cmd.data == 2) {
@@ -133,8 +133,8 @@ int main(int argc, char **argv)
         }
 
         else {
-            goal.position.x = -1.0;
-            goal.position.y = 10.0;
+            goal.position.x = 4.0;
+            goal.position.y = -4.0;
             goal.position.z = 2.0;
             mother_arrived.data = true;
             mother_arrive_pub_.publish(mother_arrived);

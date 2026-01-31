@@ -192,6 +192,12 @@ private:
         double p_set_6_x;
         double p_set_6_y;
         double p_set_6_z;   
+        double p_set_7_x;
+        double p_set_7_y;
+        double p_set_7_z;
+        double p_set_8_x;
+        double p_set_8_y;
+        double p_set_8_z;  
         int go4_point_wait_count;
         bool fly_away_test;
     };
@@ -250,6 +256,7 @@ private:
 
     bool rg_have_mother_world_ = false;
     Eigen::Vector3d rg_last_mother_world_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d rg_sample_pos_ = Eigen::Vector3d::Zero();
     Eigen::Vector3d est_dock_world = Eigen::Vector3d::Zero();
     Eigen::Vector3d dock_r2m = Eigen::Vector3d::Zero();
 

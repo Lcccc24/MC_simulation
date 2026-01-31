@@ -9,6 +9,10 @@ float32 geo_est_x
 float32 geo_est_y
 float32 geo_est_z
 
+float32 rg_sample_pos_x
+float32 rg_sample_pos_y
+float32 rg_sample_pos_z
+
 float32 max_residual
 float32 rms_residual
 
