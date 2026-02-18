@@ -100,6 +100,7 @@ OnboardUavFsm::OnboardUavFsm(ros::NodeHandle &nh)
     heartbeat_pub_ = nh.advertise<std_msgs::Empty>("/heartbeat", 1); 
     takeoff_land_cmd_pub_ = nh.advertise<quadrotor_msgs::TakeoffLand>("/px4ctrl/takeoff_land", 1);
     trajectory_pub_ = nh.advertise<quadrotor_msgs::PolyTraj>("/trajectory", 1);
+    bvp_traj_pub_ = nh.advertise<quadrotor_msgs::PolyTraj>("/bvp_traj", 1);
     std::string onboard_msg_pub_name = "/uav" + std::to_string(onboard_uav_param_.target_uav_id) + "/onboard_msg";
     onboard_msg_pub_ = nh.advertise<quadrotor_msgs::Onboard>(onboard_msg_pub_name, 1);
     arm_disarm_client_ = nh.serviceClient<mavros_msgs::CommandLong>("/Sub_UAV/mavros/cmd/command");
@@ -472,6 +473,18 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
 
     FillLandingParams();
     traj_opt_ptr_->setLandingParams(land_params_);
+
+    //调试使用
+    // static int count = 0;
+    // if (is_landing_target_vision_updated_ && count < 60) {
+    //     first_frame_corrected_pos_.x = landing_target_vision_.pose.position.x;
+    //     first_frame_corrected_pos_.y = landing_target_vision_.pose.position.y;
+    //     first_frame_corrected_pos_.z = landing_target_vision_.pose.position.z;
+    //     coord_align_pub_.publish(first_frame_corrected_pos_);
+    //     count++;
+    // }
+    // eskf_active_.data = true;
+    // eskf_actitve_pub_.publish(eskf_active_);
                              
     switch (onboard_uav_state_)
     {
@@ -586,6 +599,17 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
                 break;
             }
 
+            //调试使用
+            // onboard_published_.flight_status = quadrotor_msgs::Onboard::REMOTE_GUIDE_COMPLETE;
+            // //激活eskf
+            // for (int i = 0; i < 10; ++i) {
+            //     eskf_active_.data = true;
+            //     eskf_actitve_pub_.publish(eskf_active_);
+            // }
+            // est_dock_world = uav_odom_pos_;
+            // PubOnboardMsg();
+            // break;
+
             Remote_Guidance();
             break;
         }
@@ -606,6 +630,11 @@ void OnboardUavFsm::UpdataFsm(const ros::TimerEvent &event)
                 ROS_INFO("\033[32mMISSION: Switch to LAND\033[0m");
                 break;
             }
+
+            //调试使用
+            // onboard_published_.flight_status = quadrotor_msgs::Onboard::SEARCH_COMPLETE;
+            // PubOnboardMsg();
+            // break;
 
             Run_Search();
             break;
@@ -1261,6 +1290,8 @@ void OnboardUavFsm::RunDockingIdle()
     {
         hover_flag_ = false;
         is_first_run_ = true;
+        //调试使用
+        // docking_state_ = DockingStates::LANDING;
         docking_state_ = DockingStates::RETURN;
         ROS_INFO("\033[32mDOCKING_IDLE: Switch to DOCKING RETURN\033[0m");
     }
@@ -1407,6 +1438,8 @@ void OnboardUavFsm::RunDockingLanding()
         case LandingStates::INIT:
         {
             is_first_run_ = true;
+            // 调试使用
+            //landing_state_ = LandingStates::FINAL_LANDING;
             landing_state_ = LandingStates::DESCEND_ABOVE_TARGET;
             ROS_INFO("\033[32mDOCKING_INIT: Switch to DESCEND_ABOVE_TARGET\033[0m");
             break;
@@ -1538,6 +1571,14 @@ void OnboardUavFsm::RunDockingLanding()
             // 当目标点更新时，重新规划轨迹
             if (is_landing_target_eskf_updated_)
             {
+                // 调试使用
+                // is_replan_ = true;
+                // target_pos_.x() = 3.0;
+                // target_pos_.y() = -4.0;
+                // target_pos_.z() = 2.15;
+                // target_vel_ = Eigen::Vector3d::Zero();
+                // target_q_ = Eigen::Quaterniond::Identity();
+
                 is_replan_ = true;
                 target_pos_.x() = landing_target_eskf_.pose.position.x;
                 target_pos_.y() = landing_target_eskf_.pose.position.y;
@@ -1710,6 +1751,10 @@ void OnboardUavFsm::FillLandingParams() {
     land_params_.m_uav_pos.z() = m_uav_odom_pos_.z();
 
     if (is_landing_) {
+        //调试使用
+        // land_params_.land_x = 3.0;
+        // land_params_.land_y = -4.0;
+        // land_params_.land_z = 2.15;
         land_params_.land_x = landing_target_eskf_.pose.position.x;
         land_params_.land_y = landing_target_eskf_.pose.position.y;
         land_params_.land_z = landing_target_eskf_.pose.position.z;
@@ -1752,6 +1797,7 @@ bool OnboardUavFsm::PlanTrajectory()
         PubTrajectory(replan_start_time_);
 
         traj_opt_ptr_->trans_bvp_traj(bvp_traj_);
+        PubBvpTrajectory(now);
         vis_ptr_->visualize_traj(bvp_traj_, "bvp_trajectory"); 
         vis_ptr_->visualize_traj(poly_traj_, "onboard_uav_trajectory");
     }
@@ -1791,6 +1837,41 @@ void OnboardUavFsm::PubTrajectory(const ros::Time &replan_start_time)
     traj_msg.yaw = euler_angles[0];
 
     trajectory_pub_.publish(traj_msg);
+}
+
+void OnboardUavFsm::PubBvpTrajectory(const ros::Time &start_time)
+{
+    quadrotor_msgs::PolyTraj traj_msg;
+    traj_msg.hover = false;
+    traj_msg.order = 7;
+    traj_msg.start_time = start_time;
+    traj_msg.traj_id = traj_id_++;
+
+    Eigen::VectorXd durs = bvp_traj_.getDurations();
+    int piece_num = bvp_traj_.getPieceNum();
+    traj_msg.duration.resize(piece_num);
+    traj_msg.coef_x.resize(8 * piece_num);
+    traj_msg.coef_y.resize(8 * piece_num);
+    traj_msg.coef_z.resize(8 * piece_num);
+    for (int i = 0; i < piece_num; ++i)
+    {
+        traj_msg.duration[i] = durs(i);
+        CoefficientMat cMat = bvp_traj_[i].getCoeffMat();
+        int idx = 8 * i;
+        for (int j = 0; j < 8; ++j)
+        {
+            traj_msg.coef_x[idx + j] = cMat(0, j);
+            traj_msg.coef_y[idx + j] = cMat(1, j);
+            traj_msg.coef_z[idx + j] = cMat(2, j);
+        }
+    }
+    // 从 target_q_ 中获取航向角，ZYX顺序
+    // Eigen::Matrix3d rotationMatrix = target_q_.toRotationMatrix();
+    // Eigen::Vector3d euler_angles = rotationMatrix.eulerAngles(2, 1, 0);
+    Eigen::Vector3d euler_angles = Quaterniond2EulerAngles(target_q_);
+    traj_msg.yaw = euler_angles[0];
+
+    bvp_traj_pub_.publish(traj_msg);
 }
 
 /**

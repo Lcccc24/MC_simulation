@@ -117,6 +117,7 @@ private:
     bool PlanTrajectory();
     // 发布轨迹
     void PubTrajectory(const ros::Time &plan_start_time);
+    void PubBvpTrajectory(const ros::Time &start_time);
 
     // 发布悬停位置
     void PubHoverPos();
@@ -223,7 +224,7 @@ private:
 
     ros::NodeHandle nh_;
     ros::Subscriber uav_state_sub_, uav_local_pose_sub_, m_uav_local_pose_sub_, uav_local_vel_sub_, uav_odom_sub_, onboard_msg_sub_, landing_target_eskf_sub_, landing_target_vision_sub_, uwb_distance_sub_, mother_ready_sub_;
-    ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_, coord_align_pub_, eskf_actitve_pub_;
+    ros::Publisher heartbeat_pub_, takeoff_land_cmd_pub_, trajectory_pub_, bvp_traj_pub_, onboard_msg_pub_,onboard_uav_state_pub_, mother_move_pub_, coord_align_pub_, eskf_actitve_pub_;
     ros::Publisher remote_ctrl_pub_, fsm_state_pub_;
     ros::ServiceClient arm_disarm_client_;
 
@@ -311,7 +312,7 @@ private:
     Eigen::Vector3d mission_pt[3];
     bool mother_ready = false;
 
-    bool perform_uav_disarm_;       // 是否上锁
+    bool perform_uav_disarm_ = false;       // 是否上锁
     std::thread uav_disarm_thread_; // 无人机上锁线程
     ros::Timer fsm_timer_; // 定时器
     // 用 fsm_hz_ 控制状态机更新频率

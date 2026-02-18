@@ -198,7 +198,7 @@ void LandingTargetPose::TagDetectionCallback(const apriltag_ros::AprilTagDetecti
 
     // 分布：指数分布用于下次到达间隔；均匀分布用于丢失持续时间
     static std::exponential_distribution<double> inter_arrival(/*lambda*/ 0.4); // 平均 4s 到达一次
-    static std::uniform_real_distribution<double> loss_duration(0.1, 0.6);      // 丢失 0.1~0.3s
+    static std::uniform_real_distribution<double> loss_duration(0.4, 1.2);      // 丢失 0.1~0.3s
 
     // 首次初始化 next_loss_start_time
     if (next_loss_start_time == 0.0) {

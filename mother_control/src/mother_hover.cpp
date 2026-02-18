@@ -133,9 +133,9 @@ int main(int argc, char **argv)
         }
 
         else {
-            goal.position.x = 4.0;
+            goal.position.x = -2.0;
             goal.position.y = -4.0;
-            goal.position.z = 2.0;
+            goal.position.z = 1.5;
             mother_arrived.data = true;
             mother_arrive_pub_.publish(mother_arrived);
         }

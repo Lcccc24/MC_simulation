@@ -24,14 +24,14 @@
         <param name="docking/descend_ver_bias" type="double" value="0.7" />
         <param name="docking/rec_hor_bias" type="double" value="0.2" />
         <param name="docking/rec_ver_bias" type="double" value="0.35" />
-        <param name="docking/final_hor_bias" type="double" value="0.1" />
-        <param name="docking/final_ver_bias" type="double" value="0.15" />
+        <param name="docking/final_hor_bias" type="double" value="0.08" />
+        <param name="docking/final_ver_bias" type="double" value="0.08" />
         <param name="docking/z_control_dead" type="double" value="0.0" />
         <param name="docking/allowed_retry_hover_time_s" type="double" value="3.0" />
         <param name="docking/retry_climb_height" type="double" value="2.0" />
         <param name="docking/allowed_retry_num" type="int" value="10" />
 
-        <!-- <param name="mission/mission_pt1_x" type="double" value="5.0" />
+        <param name="mission/mission_pt1_x" type="double" value="5.0" />
         <param name="mission/mission_pt1_y" type="double" value="0.0" />
         <param name="mission/mission_pt1_z" type="double" value="4.0" />
         <param name="mission/mission_pt2_x" type="double" value="5.0" />
@@ -39,17 +39,17 @@
         <param name="mission/mission_pt2_z" type="double" value="4.0" />
         <param name="mission/mission_pt3_x" type="double" value="10.0" />
         <param name="mission/mission_pt3_y" type="double" value="-14.0" />
-        <param name="mission/mission_pt3_z" type="double" value="4.0" /> -->
+        <param name="mission/mission_pt3_z" type="double" value="4.0" />
 
-        <param name="mission/mission_pt1_x" type="double" value="7.0" />
-        <param name="mission/mission_pt1_y" type="double" value="-2.0" />
-        <param name="mission/mission_pt1_z" type="double" value="5.0" />
-        <param name="mission/mission_pt2_x" type="double" value="7.0" />
-        <param name="mission/mission_pt2_y" type="double" value="-2.0" />
-        <param name="mission/mission_pt2_z" type="double" value="5.0" />
-        <param name="mission/mission_pt3_x" type="double" value="7.0" />
-        <param name="mission/mission_pt3_y" type="double" value="-2.0" />
-        <param name="mission/mission_pt3_z" type="double" value="5.0" />
+        <!-- <param name="mission/mission_pt1_x" type="double" value="4.0" />
+        <param name="mission/mission_pt1_y" type="double" value="-5.0" />
+        <param name="mission/mission_pt1_z" type="double" value="3.0" />
+        <param name="mission/mission_pt2_x" type="double" value="4.0" />
+        <param name="mission/mission_pt2_y" type="double" value="-5.0" />
+        <param name="mission/mission_pt2_z" type="double" value="3.0" />
+        <param name="mission/mission_pt3_x" type="double" value="4.0" />
+        <param name="mission/mission_pt3_y" type="double" value="-5.0" />
+        <param name="mission/mission_pt3_z" type="double" value="3.0" /> -->
 
         <param name="remote_guide/dock_r2m_x" type="double" value="0.0" />
         <param name="remote_guide/dock_r2m_y" type="double" value="0.0" />

@@ -114,10 +114,6 @@ void PX4CtrlFSM::process()
 				}
 			}
 
-			state = AUTO_TAKEOFF;
-			controller.resetThrustMapping();
-			set_start_pose_for_takeoff_land(odom_data);
-			publish_trigger(odom_data.msg);
 			toggle_offboard_mode(true);				  // toggle on offboard before arm
 			for (int i = 0; i < 10 && ros::ok(); ++i) // wait for 0.1 seconds to allow mode change by FMU // mark
 			{
@@ -126,7 +122,15 @@ void PX4CtrlFSM::process()
 			}
 			if (param.takeoff_land.enable_auto_arm)
 			{
-				toggle_arm_disarm(true);
+				if (toggle_arm_disarm(true)) {
+					state = AUTO_TAKEOFF;
+					controller.resetThrustMapping();
+					set_start_pose_for_takeoff_land(odom_data);
+					publish_trigger(odom_data.msg);
+				} else {
+					break;
+				}
+				
 			}
 			takeoff_land.toggle_takeoff_land_time = now_time;
 

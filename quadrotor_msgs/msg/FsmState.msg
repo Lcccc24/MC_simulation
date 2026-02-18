@@ -8,9 +8,10 @@ uint8 IDLE = 0
 uint8 TAKEOFF = 1
 uint8 MISSION = 2
 uint8 REMOTE_GUIDE = 3
-uint8 DOCKING = 4
-uint8 LAND = 5
-uint8 FAIL_SAFE = 6
+uint8 SEARCH = 4
+uint8 DOCKING = 5
+uint8 LAND = 6
+uint8 FAIL_SAFE = 7
 
 uint8 INIT_D = 0
 uint8 RETURN = 1
